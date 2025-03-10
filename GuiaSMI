@@ -6,5 +6,5 @@ source myenv/bin/activate (tendrá que usarse cada vez que quieras ejecutar/modi
 pip install mediapipe
 pip install opencv-python
 pip install numpy
-./nombre
+python nombre
 deactivate (cuando acabas de usar el proyecto)
