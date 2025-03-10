@@ -1,0 +1,10 @@
+Pasos:
+crear entorno virtual-
+sudo apt install python3.12-venv
+python3 -m venv myenv
+source myenv/bin/activate (tendrá que usarse cada vez que quieras ejecutar/modificar el proyecto)
+pip install mediapipe
+pip install opencv-python
+pip install numpy
+./nombre
+deactivate (cuando acabas de usar el proyecto)
