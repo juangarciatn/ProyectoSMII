@@ -33,7 +33,7 @@ right_score = 0
 
 # Inicializar MediaPipe Hands
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.9)
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.4)
 mp_drawing = mp.solutions.drawing_utils
 
 # Variable global para almacenar los rectángulos de las manos
@@ -48,6 +48,11 @@ def get_hand_rect(hand_landmarks):
 
 def draw_ball(frame):
     cv2.circle(frame, tuple(ballPosition), BALL_SIZE, (255, 255, 255), -1)
+
+def draw_middle_line(frame):
+    for y in range(0, HEIGHT, 20):  # Dibujar segmentos de 10 píxeles con espacio de 10 píxeles
+        if (y // 10) % 2 == 0:
+            cv2.line(frame, (WIDTH // 2, y), (WIDTH // 2, y + 10), (255, 255, 255), 2)
 
 def update_ball_position(hand_rects):
     global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score
@@ -89,7 +94,7 @@ cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
 
 frame_counter = 0
-detection_interval = 2
+detection_interval = 1
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -112,6 +117,7 @@ while cap.isOpened():
 
     frame_counter += 1
     draw_ball(frame)
+    draw_middle_line(frame)  # Dibujar línea discontinua en la mitad
     update_ball_position(hand_rects)
     draw_score(frame)
     cv2.imshow("Pong AR", frame)
