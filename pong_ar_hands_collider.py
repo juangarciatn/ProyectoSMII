@@ -33,7 +33,7 @@ right_score = 0
 
 # Inicializar MediaPipe Hands
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.4)
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.2)
 mp_drawing = mp.solutions.drawing_utils
 
 # Variable global para almacenar los rectángulos de las manos
