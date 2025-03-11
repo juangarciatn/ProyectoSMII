@@ -34,19 +34,7 @@ last_touched = None  # 1: izquierda, 2: derecha
 
 # Inicializar MediaPipe Hands
 mp_hands = mp.solutions.hands
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.1)
-=======
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3)
->>>>>>> Stashed changes
-=======
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3)
->>>>>>> Stashed changes
-=======
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3)
->>>>>>> Stashed changes
 mp_drawing = mp.solutions.drawing_utils
 
 # Variable global para almacenar los rectángulos de las manos
