@@ -111,15 +111,26 @@ while cap.isOpened():
             for hand_landmarks in results.multi_hand_landmarks:
                 rect = get_hand_rect(hand_landmarks)
                 hand_rects.append(rect)
+    
+    # Verificar el número de manos detectadas
+    num_hands_detected = len(hand_rects)
+    if num_hands_detected < 2:
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
+        alpha = 0.7  # Opacidad de la superposición
+        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+        cv2.putText(frame, f"Esperando {2 - num_hands_detected} jugador(es)...", (WIDTH // 4, HEIGHT // 2),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    else:
+        for rect in hand_rects:
+            cv2.rectangle(frame, rect[0], rect[1], (0, 255, 0), 2)
 
-    for rect in hand_rects:
-        cv2.rectangle(frame, rect[0], rect[1], (0, 255, 0), 2)
-
+        draw_ball(frame)
+        draw_middle_line(frame)  # Dibujar línea discontinua en la mitad
+        update_ball_position(hand_rects)
+        draw_score(frame)
+    
     frame_counter += 1
-    draw_ball(frame)
-    draw_middle_line(frame)  # Dibujar línea discontinua en la mitad
-    update_ball_position(hand_rects)
-    draw_score(frame)
     cv2.imshow("Pong AR", frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
