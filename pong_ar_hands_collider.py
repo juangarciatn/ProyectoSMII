@@ -34,19 +34,7 @@ last_touched = None  # 1: izquierda, 2: derecha
 
 # Inicializar MediaPipe Hands
 mp_hands = mp.solutions.hands
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.1)
-=======
 hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3)
->>>>>>> Stashed changes
-=======
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3)
->>>>>>> Stashed changes
-=======
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3)
->>>>>>> Stashed changes
 mp_drawing = mp.solutions.drawing_utils
 
 # Variable global para almacenar los rectángulos de las manos
@@ -84,7 +72,6 @@ def draw_middle_line(frame):
 
 def update_ball_position(hand_rects):
     global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score, last_touched
-
     next_x = ballPosition[0] + ballSpeedX
     next_y = ballPosition[1] + ballSpeedY
 
@@ -98,7 +85,8 @@ def update_ball_position(hand_rects):
     # Verificar colisiones con manos
     collision = False
     for label, ((min_x, min_y), (max_x, max_y)) in hand_data:
-        if (min_x <= next_x <= max_x) and (min_y <= next_y <= max_y):
+        center_x = (min_x + max_x) // 2
+        if ((center_x-10) <= next_x <= (center_x+10)) and (min_y <= next_y <= max_y):
             if last_touched != label:
                 ballSpeedX = -ballSpeedX
                 last_touched = label
