@@ -57,6 +57,9 @@ def draw_middle_line(frame):
 def update_ball_position(hand_rects):
     global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score
 
+    if len(hand_rects) < 2:
+        return  # No mover la pelota si hay menos de 2 jugadores
+
     ballPosition[0] += ballSpeedX
     ballPosition[1] += ballSpeedY
 
@@ -112,6 +115,12 @@ while cap.isOpened():
                 rect = get_hand_rect(hand_landmarks)
                 hand_rects.append(rect)
     
+    # Dibujar la bola, la red y la puntuación antes de verificar las manos
+    draw_ball(frame)
+    draw_middle_line(frame)  # Dibujar línea discontinua en la mitad
+    draw_score(frame)
+    update_ball_position(hand_rects)
+    
     # Verificar el número de manos detectadas
     num_hands_detected = len(hand_rects)
     if num_hands_detected < 2:
@@ -121,14 +130,9 @@ while cap.isOpened():
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
         cv2.putText(frame, f"Esperando {2 - num_hands_detected} jugador(es)...", (WIDTH // 4, HEIGHT // 2),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-    else:
-        for rect in hand_rects:
-            cv2.rectangle(frame, rect[0], rect[1], (0, 255, 0), 2)
-
-        draw_ball(frame)
-        draw_middle_line(frame)  # Dibujar línea discontinua en la mitad
-        update_ball_position(hand_rects)
-        draw_score(frame)
+    
+    for rect in hand_rects:
+        cv2.rectangle(frame, rect[0], rect[1], (0, 255, 0), 2)
     
     frame_counter += 1
     cv2.imshow("Pong AR", frame)
