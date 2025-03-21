@@ -13,6 +13,10 @@ def load_sound(filename):
 pong_sound = load_sound("pong.mpeg")
 win_sound = load_sound("win.mp3")
 
+# Configuración de la posición en el eje coordinal
+POS_HORIZONTAL_IZQUIERDA = 30
+POS_HORIZONTAL_DERECHA = 600
+
 # Configuración de la ventana
 WIDTH = 640
 HEIGHT = 480
@@ -30,10 +34,11 @@ ballPosition = [WIDTH // 2, HEIGHT // 2]
 # Puntuación
 left_score = 0
 right_score = 0
+last_touched = None  # 1: izquierda, 2: derecha
 
 # Inicializar MediaPipe Hands
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.2)
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3)
 mp_drawing = mp.solutions.drawing_utils
 
 # Variable global para almacenar los rectángulos de las manos
@@ -46,6 +51,21 @@ def get_hand_rect(hand_landmarks):
     min_y, max_y = int(min(y_coords)), int(max(y_coords))
     return (min_x, min_y), (max_x, max_y)
 
+def process_hands(results):
+    hand_data = []
+    if results.multi_hand_landmarks:
+        # Ordenar manos por posición X (izquierda a derecha)
+        hands_sorted = sorted(
+            zip(results.multi_hand_landmarks, results.multi_handedness),
+            key=lambda h: h[0].landmark[mp_hands.HandLandmark.WRIST].x
+        )
+        
+        for idx, (landmarks, handedness) in enumerate(hands_sorted, 1):
+            label = idx  # 1: izquierda, 2: derecha
+            rect = get_hand_rect(landmarks)
+            hand_data.append((label, rect))
+    return hand_data
+
 def draw_ball(frame):
     cv2.circle(frame, tuple(ballPosition), BALL_SIZE, (255, 255, 255), -1)
 
@@ -55,35 +75,45 @@ def draw_middle_line(frame):
             cv2.line(frame, (WIDTH // 2, y), (WIDTH // 2, y + 10), (255, 255, 255), 2)
 
 def update_ball_position(hand_rects):
-    global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score
+    global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score, last_touched
+    next_x = ballPosition[0] + ballSpeedX
+    next_y = ballPosition[1] + ballSpeedY
+
+    # Rebotar en bordes superior/inferior
+    if next_y <= 0 or next_y >= HEIGHT:
+        ballSpeedY = -ballSpeedY
 
     if len(hand_rects) < 2:
         return  # No mover la pelota si hay menos de 2 jugadores
 
-    ballPosition[0] += ballSpeedX
-    ballPosition[1] += ballSpeedY
+    # Verificar colisiones con manos
+    collision = False
+    for label, ((min_x, min_y), (max_x, max_y)) in hand_data:
+        center_x = (min_x + max_x) // 2
+        if ((center_x-10) <= next_x <= (center_x+10)) and (min_y <= next_y <= max_y):
+            if last_touched != label:
+                ballSpeedX = -ballSpeedX
+                last_touched = label
+                collision = True
+                if pong_sound:
+                    pong_sound.play()
+                break
 
-    # Rebotar en los bordes superior e inferior
-    if ballPosition[1] <= 0 or ballPosition[1] >= HEIGHT:
-        ballSpeedY = -ballSpeedY
-
-    # Rebotar en las manos
-    for rect in hand_rects:
-        (min_x, min_y), (max_x, max_y) = rect
-        if (min_x <= ballPosition[0] <= max_x) and (min_y <= ballPosition[1] <= max_y):
-            ballSpeedX = -ballSpeedX
-            if pong_sound:
-                pong_sound.play()
-            break
+    # Actualizar posición solo si no hay colisión no válida
+    if not collision:
+        ballPosition[0] = next_x
+        ballPosition[1] = next_y
 
     # Asignar puntos según el borde alcanzado
     if ballPosition[0] <= 0:
         right_score += 1  # Punto para la derecha
+        last_touched = None
         if win_sound:
             win_sound.play()
         ballPosition = [WIDTH // 2, HEIGHT // 2]  # Reiniciar la bola
     elif ballPosition[0] >= WIDTH:
         left_score += 1  # Punto para la izquierda
+        last_touched = None
         if win_sound:
             win_sound.play()
         ballPosition = [WIDTH // 2, HEIGHT // 2]
@@ -96,9 +126,6 @@ cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
 
-frame_counter = 0
-detection_interval = 1
-
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -106,37 +133,38 @@ while cap.isOpened():
 
     frame = cv2.flip(frame, 1)
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-    if frame_counter % detection_interval == 0:
-        results = hands.process(rgb_frame)
-        hand_rects.clear()
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                rect = get_hand_rect(hand_landmarks)
-                hand_rects.append(rect)
     
-    # Dibujar la bola, la red y la puntuación antes de verificar las manos
+    # Procesar manos en cada frame
+    results = hands.process(rgb_frame)
+    hand_data = process_hands(results)
+    
+    # Dibujar elementos del juego
     draw_ball(frame)
-    draw_middle_line(frame)  # Dibujar línea discontinua en la mitad
+    draw_middle_line(frame)
     draw_score(frame)
-    update_ball_position(hand_rects)
+    update_ball_position(hand_data)
     
-    # Verificar el número de manos detectadas
-    num_hands_detected = len(hand_rects)
-    if num_hands_detected < 2:
+    # Dibujar rectángulos y etiquetas de manos
+    for label, ((min_x, min_y), (max_x, max_y)) in hand_data:
+        cv2.rectangle(frame, (min_x, min_y), (max_x, max_y), (0, 255, 0), 2)
+    
+        # Dibujar la "X" en la posición de la mano
+        cv2.line(frame, (min_x, min_y), (max_x, max_y), (0, 255, 0), 2)  # Línea diagonal \
+        cv2.line(frame, (max_x, min_y), (min_x, max_y), (0, 255, 0), 2)  # Línea diagonal /
+
+        cv2.putText(frame, str(label), (min_x + 5, min_y + 20), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+    
+    # Mostrar mensaje si faltan jugadores
+    if len(hand_data) < 2:
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
-        alpha = 0.7  # Opacidad de la superposición
-        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-        cv2.putText(frame, f"Esperando {2 - num_hands_detected} jugador(es)...", (WIDTH // 4, HEIGHT // 2),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
+        cv2.putText(frame, f"Waiting for {2 - len(hand_data)} player(s)...", 
+                    (WIDTH//4, HEIGHT//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
     
-    for rect in hand_rects:
-        cv2.rectangle(frame, rect[0], rect[1], (0, 255, 0), 2)
+    cv2.imshow("Pong AR - Turn-Based", frame)
     
-    frame_counter += 1
-    cv2.imshow("Pong AR", frame)
-
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
