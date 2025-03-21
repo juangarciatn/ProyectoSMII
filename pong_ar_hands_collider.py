@@ -22,6 +22,10 @@ def draw_vertical_lines(frame):
 POS_HORIZONTAL_IZQUIERDA = 30
 POS_HORIZONTAL_DERECHA = 600
 
+# Configuración de los rectángulos
+RECTANGULO_WIDTH  = 30
+RECTANGULO_HEIGHT = 80
+
 # Configuración de la ventana
 WIDTH = 640
 HEIGHT = 480
@@ -161,6 +165,21 @@ while cap.isOpened():
         # Calcular el centro de la "X"
         center_x = (min_x + max_x) // 2
         center_y = (min_y + max_y) // 2
+
+        # Determinar la posición del rectángulo
+        if label == 1:  # Mano izquierda
+            rect_center_x = POS_HORIZONTAL_IZQUIERDA
+        elif label == 2:  # Mano derecha
+            rect_center_x = POS_HORIZONTAL_DERECHA
+
+        # Calcular las coordenadas del rectángulo
+        rect_min_x = rect_center_x - RECTANGULO_WIDTH // 2
+        rect_max_x = rect_center_x + RECTANGULO_WIDTH // 2
+        rect_min_y = center_y - RECTANGULO_HEIGHT // 2
+        rect_max_y = center_y + RECTANGULO_HEIGHT // 2
+
+        # Dibujar el rectángulo
+        cv2.rectangle(frame, (rect_min_x, rect_min_y), (rect_max_x, rect_max_y), (255, 0, 0), 2)
 
         # Determinar la línea horizontal según la mano (izquierda o derecha)
         if label == 1:  # Mano izquierda
