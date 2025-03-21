@@ -13,6 +13,11 @@ def load_sound(filename):
 pong_sound = load_sound("pong.mpeg")
 win_sound = load_sound("win.mp3")
 
+# Función para dibujar las líneas verticales
+def draw_vertical_lines(frame):
+    cv2.line(frame, (POS_HORIZONTAL_IZQUIERDA, 0), (POS_HORIZONTAL_IZQUIERDA, HEIGHT), (0, 0, 255), 2)
+    cv2.line(frame, (POS_HORIZONTAL_DERECHA, 0), (POS_HORIZONTAL_DERECHA, HEIGHT), (0, 0, 255), 2)
+
 # Configuración de la posición en el eje coordinal
 POS_HORIZONTAL_IZQUIERDA = 30
 POS_HORIZONTAL_DERECHA = 600
@@ -143,6 +148,7 @@ while cap.isOpened():
     draw_middle_line(frame)
     draw_score(frame)
     update_ball_position(hand_data)
+    draw_vertical_lines(frame)
     
     # Dibujar rectángulos y etiquetas de manos
     for label, ((min_x, min_y), (max_x, max_y)) in hand_data:
