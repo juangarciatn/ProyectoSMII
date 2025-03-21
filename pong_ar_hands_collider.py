@@ -158,6 +158,16 @@ while cap.isOpened():
         cv2.line(frame, (min_x, min_y), (max_x, max_y), (0, 255, 0), 2)  # Línea diagonal \
         cv2.line(frame, (max_x, min_y), (min_x, max_y), (0, 255, 0), 2)  # Línea diagonal /
 
+        # Calcular el centro de la "X"
+        center_x = (min_x + max_x) // 2
+        center_y = (min_y + max_y) // 2
+
+        # Determinar la línea horizontal según la mano (izquierda o derecha)
+        if label == 1:  # Mano izquierda
+            cv2.line(frame, (center_x, center_y), (POS_HORIZONTAL_IZQUIERDA, center_y), (0, 0, 255), 2)
+        elif label == 2:  # Mano derecha
+            cv2.line(frame, (center_x, center_y), (POS_HORIZONTAL_DERECHA, center_y), (0, 0, 255), 2)
+
         cv2.putText(frame, str(label), (min_x + 5, min_y + 20), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
     
