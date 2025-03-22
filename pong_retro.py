@@ -20,7 +20,7 @@ def draw_vertical_lines(frame):
 
 # Configuración de la posición en el eje coordinal
 POS_HORIZONTAL_IZQUIERDA = 30
-POS_HORIZONTAL_DERECHA = 600
+POS_HORIZONTAL_DERECHA = 610
 
 # Configuración de los rectángulos
 RECTANGULO_WIDTH  = 30
@@ -146,22 +146,52 @@ def update_ball_position(hand_data):
         ballPosition = [WIDTH // 2, HEIGHT // 2]
 
 def draw_paddles(frame):
+    # Cambiar el color de los rectángulos a blanco (255, 255, 255)
     cv2.rectangle(frame, (POS_HORIZONTAL_IZQUIERDA - RECTANGULO_WIDTH // 2, left_paddle_y),
                   (POS_HORIZONTAL_IZQUIERDA + RECTANGULO_WIDTH // 2, left_paddle_y + RECTANGULO_HEIGHT),
-                  (255, 0, 0), -1)  # Azul
+                  (255, 255, 255), -1)  # Blanco
 
     cv2.rectangle(frame, (POS_HORIZONTAL_DERECHA - RECTANGULO_WIDTH // 2, right_paddle_y),
                   (POS_HORIZONTAL_DERECHA + RECTANGULO_WIDTH // 2, right_paddle_y + RECTANGULO_HEIGHT),
-                  (255, 0, 0), -1)  # Azul
-
+                  (255, 255, 255), -1)  # Blanco
 
 def draw_score(frame):
     cv2.putText(frame, f"Left: {left_score}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
     cv2.putText(frame, f"Right: {right_score}", (WIDTH - 200, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
+# Crear una segunda ventana con fondo negro
+def create_second_window():
+    second_window = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+    return second_window
+
+# Dibujar elementos en la segunda ventana
+def draw_second_window(second_window, hand_data):
+    # Dibujar la línea discontinua blanca
+    draw_middle_line(second_window)
+    
+    # Dibujar los marcadores
+    draw_score(second_window)
+    
+    # Dibujar los rectángulos blancos
+    draw_paddles(second_window)
+    
+    # Dibujar la pelota en la segunda ventana
+    draw_ball(second_window)
+
+    # Mostrar mensaje si faltan jugadores
+    if len(hand_data) < 2:
+        overlay = second_window.copy()
+        cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.7, second_window, 0.3, 0, second_window)
+        cv2.putText(second_window, f"Waiting for {2 - len(hand_data)} player(s)...", 
+                    (WIDTH//4, HEIGHT//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+
+# Crear la segunda ventana
+second_window = create_second_window()
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -175,7 +205,7 @@ while cap.isOpened():
     results = hands.process(rgb_frame)
     hand_data = process_hands(results)
     
-    # Dibujar elementos del juego
+    # Dibujar elementos del juego en la ventana principal
     draw_ball(frame)
     draw_middle_line(frame)
     draw_score(frame)
@@ -195,21 +225,6 @@ while cap.isOpened():
         center_x = (min_x + max_x) // 2
         center_y = (min_y + max_y) // 2
 
-        # Determinar la posición del rectángulo
-        if label == 1:  # Mano izquierda
-            rect_center_x = POS_HORIZONTAL_IZQUIERDA
-        elif label == 2:  # Mano derecha
-            rect_center_x = POS_HORIZONTAL_DERECHA
-
-        # Calcular las coordenadas del rectángulo
-        rect_min_x = rect_center_x - RECTANGULO_WIDTH // 2
-        rect_max_x = rect_center_x + RECTANGULO_WIDTH // 2
-        rect_min_y = center_y - RECTANGULO_HEIGHT // 2
-        rect_max_y = center_y + RECTANGULO_HEIGHT // 2
-
-        # Dibujar el rectángulo
-        cv2.rectangle(frame, (rect_min_x, rect_min_y), (rect_max_x, rect_max_y), (255, 0, 0), 2)
-
         # Determinar la línea horizontal según la mano (izquierda o derecha)
         if label == 1:  # Mano izquierda
             cv2.line(frame, (center_x, center_y), (POS_HORIZONTAL_IZQUIERDA, center_y), (0, 0, 255), 2)
@@ -227,7 +242,13 @@ while cap.isOpened():
         cv2.putText(frame, f"Waiting for {2 - len(hand_data)} player(s)...", 
                     (WIDTH//4, HEIGHT//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
     
+    # Actualizar la segunda ventana
+    second_window = create_second_window()
+    draw_second_window(second_window, hand_data)
+    
+    # Mostrar ambas ventanas
     cv2.imshow("Pong AR - Turn-Based", frame)
+    cv2.imshow("Pong AR - Second Window", second_window)
     
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
