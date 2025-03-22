@@ -9,3 +9,9 @@ pip install numpy
 pip install pygame
 python nombre
 deactivate (cuando acabas de usar el proyecto)
+
+
+En Windows 11 el programa usa la cámara del portátil
+Se recomienda tras la finalización de su uso reiniciar el equipo, ya que puede bloquear la cámara
+Pero se soluciona con un reinicio del ordenador
+También se recomienda usar este programa cuando no uses otros programas que quieran usar la cámara del portátil, ya que no lo podrán usar
