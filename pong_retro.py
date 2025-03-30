@@ -101,7 +101,7 @@ def update_ball_position(hand_data):
 
     # No mover la pelota si hay menos de 2 jugadores
     if len(hand_data) < 2:
-        return  
+        return
 
     next_x = ballPosition[0] + ballSpeedX
     next_y = ballPosition[1] + ballSpeedY
@@ -111,7 +111,7 @@ def update_ball_position(hand_data):
         ballSpeedY = -ballSpeedY
 
     # Detectar colisión con los rectángulos azules
-    if (POS_HORIZONTAL_IZQUIERDA - RECTANGULO_WIDTH // 2 <= next_x <= POS_HORIZONTAL_IZQUIERDA + RECTANGULO_WIDTH // 2 and 
+    if (POS_HORIZONTAL_IZQUIERDA - RECTANGULO_WIDTH // 2 <= next_x <= POS_HORIZONTAL_IZQUIERDA + RECTANGULO_WIDTH // 2 and
         left_paddle_y <= next_y <= left_paddle_y + RECTANGULO_HEIGHT):
         if last_touched != 1:
             ballSpeedX = -ballSpeedX
@@ -119,7 +119,7 @@ def update_ball_position(hand_data):
             if pong_sound:
                 pong_sound.play()
 
-    elif (POS_HORIZONTAL_DERECHA - RECTANGULO_WIDTH // 2 <= next_x <= POS_HORIZONTAL_DERECHA + RECTANGULO_WIDTH // 2 and 
+    elif (POS_HORIZONTAL_DERECHA - RECTANGULO_WIDTH // 2 <= next_x <= POS_HORIZONTAL_DERECHA + RECTANGULO_WIDTH // 2 and
           right_paddle_y <= next_y <= right_paddle_y + RECTANGULO_HEIGHT):
         if last_touched != 2:
             ballSpeedX = -ballSpeedX
@@ -168,13 +168,13 @@ def create_second_window():
 def draw_second_window(second_window, hand_data):
     # Dibujar la línea discontinua blanca
     draw_middle_line(second_window)
-    
+
     # Dibujar los marcadores
     draw_score(second_window)
-    
+
     # Dibujar los rectángulos blancos
     draw_paddles(second_window)
-    
+
     # Dibujar la pelota en la segunda ventana
     draw_ball(second_window)
 
@@ -183,7 +183,7 @@ def draw_second_window(second_window, hand_data):
         overlay = second_window.copy()
         cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
         cv2.addWeighted(overlay, 0.7, second_window, 0.3, 0, second_window)
-        cv2.putText(second_window, f"Waiting for {2 - len(hand_data)} player(s)...", 
+        cv2.putText(second_window, f"Waiting for {2 - len(hand_data)} player(s)...",
                     (WIDTH//4, HEIGHT//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
 cap = cv2.VideoCapture(0)
@@ -200,11 +200,11 @@ while cap.isOpened():
 
     frame = cv2.flip(frame, 1)
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    
+
     # Procesar manos en cada frame
     results = hands.process(rgb_frame)
     hand_data = process_hands(results)
-    
+
     # Dibujar elementos del juego en la ventana principal
     draw_ball(frame)
     draw_middle_line(frame)
@@ -212,11 +212,11 @@ while cap.isOpened():
     draw_paddles(frame)
     update_ball_position(hand_data)
     draw_vertical_lines(frame)
-    
+
     # Dibujar rectángulos y etiquetas de manos
     for label, ((min_x, min_y), (max_x, max_y)) in hand_data:
         cv2.rectangle(frame, (min_x, min_y), (max_x, max_y), (0, 255, 0), 2)
-    
+
         # Dibujar la "X" en la posición de la mano
         cv2.line(frame, (min_x, min_y), (max_x, max_y), (0, 255, 0), 2)  # Línea diagonal \
         cv2.line(frame, (max_x, min_y), (min_x, max_y), (0, 255, 0), 2)  # Línea diagonal /
@@ -231,25 +231,25 @@ while cap.isOpened():
         elif label == 2:  # Mano derecha
             cv2.line(frame, (center_x, center_y), (POS_HORIZONTAL_DERECHA, center_y), (0, 0, 255), 2)
 
-        cv2.putText(frame, str(label), (min_x + 5, min_y + 20), 
+        cv2.putText(frame, str(label), (min_x + 5, min_y + 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-    
+
     # Mostrar mensaje si faltan jugadores
     if len(hand_data) < 2:
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
         cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
-        cv2.putText(frame, f"Waiting for {2 - len(hand_data)} player(s)...", 
+        cv2.putText(frame, f"Waiting for {2 - len(hand_data)} player(s)...",
                     (WIDTH//4, HEIGHT//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-    
+
     # Actualizar la segunda ventana
     second_window = create_second_window()
     draw_second_window(second_window, hand_data)
-    
+
     # Mostrar ambas ventanas
     cv2.imshow("Pong AR - Turn-Based", frame)
     cv2.imshow("Pong AR - Second Window", second_window)
-    
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 

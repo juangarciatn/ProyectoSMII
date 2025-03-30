@@ -3,6 +3,9 @@ import mediapipe as mp
 import numpy as np
 import pygame
 import os
+import time
+import random
+from collections import deque
 
 # Inicializar pygame para sonidos
 pygame.mixer.init()
@@ -20,12 +23,15 @@ HEIGHT = 480
 # Tamaño de la bola
 BALL_SIZE = 10
 
-# Velocidad de la bola
-ballSpeedX = 5
-ballSpeedY = 5
+# Configuración de velocidad de la bola
+INITIAL_BALL_SPEED = 5
+MAX_BALL_SPEED = 15
+HAND_SPEED_MULTIPLIER = 5
 
 # Posición inicial de la bola
-ballPosition = [WIDTH // 2, HEIGHT // 2]
+ballPosition = [int(WIDTH // 2), int(HEIGHT // 2)]
+ballSpeedX = INITIAL_BALL_SPEED
+ballSpeedY = INITIAL_BALL_SPEED
 
 # Puntuación
 left_score = 0
@@ -34,11 +40,67 @@ last_touched = None  # 1: izquierda, 2: derecha
 
 # Inicializar MediaPipe Hands
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3)
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.5, min_tracking_confidence=0.5)
 mp_drawing = mp.solutions.drawing_utils
 
-# Variable global para almacenar los rectángulos de las manos
-hand_rects = []
+# Variables para el seguimiento
+last_detected_time = [0, 0]  # Para mano izquierda (0) y derecha (1)
+warning_shown = [False, False]  # Para controlar si se mostró advertencia
+game_active = False
+game_paused = False
+
+# Configuración del sistema de seguimiento mejorado
+HISTORY_LENGTH = 5  # Número de frames a considerar para el promedio móvil
+SMOOTHING_ALPHA = 0.3  # Factor de suavizado exponencial
+
+WARNING_TIME = 1.0
+PAUSE_TIME = 3.0
+
+class HandTracker:
+    def __init__(self):
+        self.position_history = deque(maxlen=HISTORY_LENGTH)
+        self.smoothed_speed = [0, 0]
+        self.last_valid_position = None
+        self.last_valid_time = time.time()
+        self.hand_size = 50  # Tamaño estimado de la mano en píxeles
+
+    def update(self, new_position):
+        current_time = time.time()
+
+        # Si tenemos una nueva posición válida
+        if new_position:
+            self.last_valid_position = new_position
+            self.last_valid_time = current_time
+            self.position_history.append((new_position, current_time))
+
+            # Calcular velocidad basada en el historial
+            if len(self.position_history) >= 2:
+                total_dx, total_dy, total_time = 0, 0, 0
+                for i in range(1, len(self.position_history)):
+                    prev_pos, prev_time = self.position_history[i-1]
+                    curr_pos, curr_time = self.position_history[i]
+                    total_dx += curr_pos[0] - prev_pos[0]
+                    total_dy += curr_pos[1] - prev_pos[1]
+                    total_time += curr_time - prev_time
+
+                if total_time > 0:
+                    avg_speed_x = total_dx / total_time
+                    avg_speed_y = total_dy / total_time
+                    # Aplicar suavizado exponencial
+                    self.smoothed_speed[0] = SMOOTHING_ALPHA * avg_speed_x + (1-SMOOTHING_ALPHA) * self.smoothed_speed[0]
+                    self.smoothed_speed[1] = SMOOTHING_ALPHA * avg_speed_y + (1-SMOOTHING_ALPHA) * self.smoothed_speed[1]
+
+        # Si no hay detección pero tenemos datos anteriores, estimar posición
+        elif self.last_valid_position and (current_time - self.last_valid_time < 0.2):  # 200ms de tolerancia
+            dt = current_time - self.last_valid_time
+            estimated_x = self.last_valid_position[0] + self.smoothed_speed[0] * dt
+            estimated_y = self.last_valid_position[1] + self.smoothed_speed[1] * dt
+            return (estimated_x, estimated_y), self.smoothed_speed
+
+        return new_position, self.smoothed_speed if new_position else (None, [0, 0])
+
+# Inicializar trackers para cada mano
+hand_trackers = [HandTracker(), HandTracker()]
 
 def get_hand_rect(hand_landmarks):
     x_coords = [lm.x * WIDTH for lm in hand_landmarks.landmark]
@@ -48,116 +110,254 @@ def get_hand_rect(hand_landmarks):
     return (min_x, min_y), (max_x, max_y)
 
 def process_hands(results):
+    global last_detected_time, warning_shown, game_active, game_paused
+
     hand_data = []
+    current_time = time.time()
+    hands_detected = [False, False]  # [left, right]
+    middle_line = WIDTH // 2  # Línea central de la pantalla
+
     if results.multi_hand_landmarks:
-        # Ordenar manos por posición X (izquierda a derecha)
-        hands_sorted = sorted(
-            zip(results.multi_hand_landmarks, results.multi_handedness),
-            key=lambda h: h[0].landmark[mp_hands.HandLandmark.WRIST].x
-        )
-        
-        for idx, (landmarks, handedness) in enumerate(hands_sorted, 1):
-            label = idx  # 1: izquierda, 2: derecha
+        # Procesamos cada mano detectada
+        for landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
+            # Obtenemos la posición de la muñeca como referencia
+            wrist_x = landmarks.landmark[mp_hands.HandLandmark.WRIST].x * WIDTH
+            wrist_y = landmarks.landmark[mp_hands.HandLandmark.WRIST].y * HEIGHT
+
+            # Determinamos si es mano izquierda o derecha basado en posición
+            if wrist_x < middle_line:
+                label = "left"
+                tracker_index = 0
+            else:
+                label = "right"
+                tracker_index = 1
+
+            # Obtenemos el rectángulo delimitador
             rect = get_hand_rect(landmarks)
-            hand_data.append((label, rect))
+            center = ((rect[0][0] + rect[1][0]) / 2, (rect[0][1] + rect[1][1]) / 2)
+
+            # Actualizamos el tracker correspondiente
+            estimated_pos, speed = hand_trackers[tracker_index].update(center)
+
+            if estimated_pos:
+                # Si la posición es estimada, usar la última válida
+                if center is None:
+                    estimated_pos = hand_trackers[tracker_index].last_valid_position
+
+                # Reconstruir rectángulo basado en posición estimada
+                hand_size = hand_trackers[tracker_index].hand_size
+                min_x = int(estimated_pos[0] - hand_size)
+                max_x = int(estimated_pos[0] + hand_size)
+                min_y = int(estimated_pos[1] - hand_size)
+                max_y = int(estimated_pos[1] + hand_size)
+
+                hand_data.append((label, ((min_x, min_y), (max_x, max_y)), hand_trackers[tracker_index]))
+                hands_detected[tracker_index] = True
+                last_detected_time[tracker_index] = current_time
+
+                if warning_shown[tracker_index]:
+                    warning_shown[tracker_index] = False
+
+    # Resto del código para manejar detecciones perdidas...
+    for i in range(2):
+        time_since_last_detection = current_time - last_detected_time[i]
+
+        if not hands_detected[i] and last_detected_time[i] > 0:
+            if time_since_last_detection > WARNING_TIME and not warning_shown[i]:
+                warning_shown[i] = True
+
+            if time_since_last_detection > PAUSE_TIME:
+                game_paused = True
+
+    if all(hands_detected) and (not game_active or game_paused):
+        game_active = True
+        game_paused = False
+        for i in range(2):
+            warning_shown[i] = False
+
     return hand_data
 
 def draw_ball(frame):
-    cv2.circle(frame, tuple(ballPosition), BALL_SIZE, (255, 255, 255), -1)
+    center = (int(round(ballPosition[0])), int(round(ballPosition[1])))
+    cv2.circle(frame, center, BALL_SIZE, (255, 255, 255), -1)
 
 def draw_middle_line(frame):
-    for y in range(0, HEIGHT, 20):  # Dibujar segmentos de 10 píxeles con espacio de 10 píxeles
+    for y in range(0, HEIGHT, 20):
         if (y // 10) % 2 == 0:
             cv2.line(frame, (WIDTH // 2, y), (WIDTH // 2, y + 10), (255, 255, 255), 2)
 
-def update_ball_position(hand_rects):
+import random
+
+def update_ball_position(hand_data):
     global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score, last_touched
-    next_x = ballPosition[0] + ballSpeedX
-    next_y = ballPosition[1] + ballSpeedY
+
+    if game_paused or not game_active:
+        return
+
+    next_x = float(ballPosition[0]) + ballSpeedX
+    next_y = float(ballPosition[1]) + ballSpeedY
 
     # Rebotar en bordes superior/inferior
     if next_y <= 0 or next_y >= HEIGHT:
         ballSpeedY = -ballSpeedY
 
-    if len(hand_rects) < 2:
-        return  # No mover la pelota si hay menos de 2 jugadores
-
-    # Verificar colisiones con manos
+    # Verificar colisiones con los rectángulos de las manos
     collision = False
-    for label, ((min_x, min_y), (max_x, max_y)) in hand_data:
-        center_x = (min_x + max_x) // 2
-        if ((center_x-10) <= next_x <= (center_x+10)) and (min_y <= next_y <= max_y):
+    for label, ((min_x, min_y), (max_x, max_y)), hand_tracker in hand_data:
+        # Verificar si la pelota está dentro del área extendida del rectángulo
+        if (min_x - BALL_SIZE <= next_x <= max_x + BALL_SIZE and
+            min_y - BALL_SIZE <= next_y <= max_y + BALL_SIZE):
+
+            # Determinar el lado principal de colisión
+            overlap_left = abs(next_x - min_x)
+            overlap_right = abs(next_x - max_x)
+            overlap_top = abs(next_y - min_y)
+            overlap_bottom = abs(next_y - max_y)
+
+            # Encontrar el menor solapamiento para determinar el lado de colisión
+            min_overlap = min(overlap_left, overlap_right, overlap_top, overlap_bottom)
+
             if last_touched != label:
-                ballSpeedX = -ballSpeedX
+                if min_overlap == overlap_left or min_overlap == overlap_right:
+                    # Colisión horizontal: invertir X y aumentar velocidad
+                    ballSpeedX = -ballSpeedX * 1.1
+
+                    # Aplicar dirección aleatoria en el eje Y
+                    random_direction = random.choice([-1, 1])  # -1 para arriba, 1 para abajo
+                    ballSpeedY = random.uniform(2, 5) * random_direction  # Rango de velocidad moderado
+
+                elif min_overlap == overlap_top or min_overlap == overlap_bottom:
+                    # Colisión vertical: invertir Y
+                    ballSpeedY = -ballSpeedY
+                    # También añadimos un pequeño componente aleatorio en X
+                    ballSpeedX += random.uniform(-1, 1)
+
+                # Asegurar que la pelota no rebote hacia atrás
+                if (ballSpeedX > 0 and next_x < min_x) or (ballSpeedX < 0 and next_x > max_x):
+                    ballSpeedX = -ballSpeedX
+
+                # Limitar velocidad máxima
+                speed_magnitude = np.sqrt(ballSpeedX**2 + ballSpeedY**2)
+                if speed_magnitude > MAX_BALL_SPEED:
+                    scale_factor = MAX_BALL_SPEED / speed_magnitude
+                    ballSpeedX *= scale_factor
+                    ballSpeedY *= scale_factor
+
                 last_touched = label
                 collision = True
                 if pong_sound:
                     pong_sound.play()
                 break
 
-    # Actualizar posición solo si no hay colisión no válida
-    if not collision:
-        ballPosition[0] = next_x
-        ballPosition[1] = next_y
+    # Actualizar posición
+    ballPosition[0] = int(round(next_x))
+    ballPosition[1] = int(round(next_y))
 
-    # Asignar puntos según el borde alcanzado
+    # Puntos cuando la pelota sale de la pantalla
     if ballPosition[0] <= 0:
-        right_score += 1  # Punto para la derecha
+        right_score += 1
         last_touched = None
         if win_sound:
             win_sound.play()
-        ballPosition = [WIDTH // 2, HEIGHT // 2]  # Reiniciar la bola
+        reset_ball()
     elif ballPosition[0] >= WIDTH:
-        left_score += 1  # Punto para la izquierda
+        left_score += 1
         last_touched = None
         if win_sound:
             win_sound.play()
-        ballPosition = [WIDTH // 2, HEIGHT // 2]
+        reset_ball()
+
+def reset_ball():
+    global ballPosition, ballSpeedX, ballSpeedY
+    ballPosition = [int(WIDTH // 2), int(HEIGHT // 2)]
+    ballSpeedX = INITIAL_BALL_SPEED if np.random.rand() > 0.5 else -INITIAL_BALL_SPEED
+    ballSpeedY = INITIAL_BALL_SPEED
 
 def draw_score(frame):
     cv2.putText(frame, f"Left: {left_score}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
     cv2.putText(frame, f"Right: {right_score}", (WIDTH - 200, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+def draw_warnings(frame):
+    for i in range(2):
+        if warning_shown[i]:
+            hand_name = "Left" if i == 0 else "Right"
+            cv2.putText(frame, f"{hand_name} hand not detected!",
+                        (20, 100 + i*30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    frame = cv2.flip(frame, 1)
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    
-    # Procesar manos en cada frame
-    results = hands.process(rgb_frame)
-    hand_data = process_hands(results)
-    
-    # Dibujar elementos del juego
-    draw_ball(frame)
-    draw_middle_line(frame)
-    draw_score(frame)
-    update_ball_position(hand_data)
-    
-    # Dibujar rectángulos y etiquetas de manos
-    for label, ((min_x, min_y), (max_x, max_y)) in hand_data:
-        cv2.rectangle(frame, (min_x, min_y), (max_x, max_y), (0, 255, 0), 2)
-        cv2.putText(frame, str(label), (min_x + 5, min_y + 20), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-    
-    # Mostrar mensaje si faltan jugadores
-    if len(hand_data) < 2:
+def draw_game_status(frame):
+    if not game_active:
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
         cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
-        cv2.putText(frame, f"Waiting for {2 - len(hand_data)} player(s)...", 
+        cv2.putText(frame, "Waiting for 2 players...",
                     (WIDTH//4, HEIGHT//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-    
-    cv2.imshow("Pong AR - Turn-Based", frame)
-    
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+    elif game_paused:
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
+        cv2.putText(frame, "Game Paused - Show both hands to resume",
+                    (WIDTH//6, HEIGHT//2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
 
-cap.release()
-cv2.destroyAllWindows()
+def draw_debug_info(frame):
+    # Mostrar información de debug en la esquina inferior izquierda
+    debug_texts = [
+        f"Ball Position: ({ballPosition[0]}, {ballPosition[1]})",
+        f"Ball Speed: ({ballSpeedX:.1f}, {ballSpeedY:.1f})",
+        f"Left Hand Speed: ({hand_trackers[0].smoothed_speed[0]:.1f}, {hand_trackers[0].smoothed_speed[1]:.1f})",
+        f"Right Hand Speed: ({hand_trackers[1].smoothed_speed[0]:.1f}, {hand_trackers[1].smoothed_speed[1]:.1f})",
+        f"Game State: {'Active' if game_active else 'Inactive'} {'(Paused)' if game_paused else ''}",
+        f"Last Touched: {'Left' if last_touched == 1 else 'Right' if last_touched == 2 else 'None'}"
+    ]
+
+    for i, text in enumerate(debug_texts):
+        cv2.putText(frame, text, (10, HEIGHT - 30 - (i * 25)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+def main():
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Error: No se pudo abrir la cámara")
+        return
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            print("Error: No se pudo capturar el frame")
+            break
+
+        frame = cv2.flip(frame, 1)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # Procesar manos en cada frame
+        results = hands.process(rgb_frame)
+        hand_data = process_hands(results)
+
+        # Dibujar elementos del juego
+        draw_ball(frame)
+        draw_middle_line(frame)
+        draw_score(frame)
+        update_ball_position(hand_data)
+        draw_warnings(frame)
+        draw_game_status(frame)
+        draw_debug_info(frame)
+
+        # Dibujar rectángulos y etiquetas de manos
+        if game_active or not game_paused:
+            for label, ((min_x, min_y), (max_x, max_y)), _ in hand_data:
+                cv2.rectangle(frame, (min_x, min_y), (max_x, max_y), (0, 255, 0), 1)
+                cv2.putText(frame, str(label), (min_x + 5, min_y + 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
+        cv2.imshow("Pong AR - Turn-Based", frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()

@@ -39,7 +39,7 @@ def draw_button(frame, text, position):
     (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
     text_x = x1 + ((x2 - x1) - text_width) // 2
     text_y = y1 + ((y2 - y1) + text_height) // 2
-    cv2.putText(frame, text, (text_x, text_y), 
+    cv2.putText(frame, text, (text_x, text_y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
 
 def draw_main_menu(frame):
@@ -48,9 +48,9 @@ def draw_main_menu(frame):
     draw_button(frame, "Ajustes", button_positions['main']['settings'])
     draw_button(frame, "Salir", button_positions['main']['exit'])
     # Título con sombra
-    cv2.putText(frame, "Menú Principal", (235, 70), 
+    cv2.putText(frame, "Menú Principal", (235, 70),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 0), 4)
-    cv2.putText(frame, "Menú Principal", (235, 70), 
+    cv2.putText(frame, "Menú Principal", (235, 70),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 0), 2)
 
 def draw_settings_menu(frame):
@@ -59,15 +59,15 @@ def draw_settings_menu(frame):
     draw_button(frame, "Versión Retro", button_positions['settings']['retro'])
     draw_button(frame, "Volver", button_positions['settings']['back'])
     # Indicador de selección
-    cv2.putText(frame, f"Versión actual: {selected_version}", 
+    cv2.putText(frame, f"Versión actual: {selected_version}",
                 (180, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 0), 2)
     # Título con estilo
-    cv2.putText(frame, "Selecciona versión:", 
+    cv2.putText(frame, "Selecciona versión:",
                 (200, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 200), 2)
 
 def mouse_callback(event, x, y, flags, param):
     global current_menu, selected_version
-    
+
     if event == cv2.EVENT_LBUTTONDOWN:
         try:
             if current_menu == MAIN_MENU:
@@ -81,7 +81,7 @@ def mouse_callback(event, x, y, flags, param):
                         current_menu = SETTINGS_MENU
                     elif 350 <= y <= 430:
                         cv2.destroyAllWindows()
-                        
+
             elif current_menu == SETTINGS_MENU:
                 if 200 <= x <= 440:
                     if 150 <= y <= 230:
@@ -101,14 +101,14 @@ cv2.setMouseCallback(WINDOW_NAME, mouse_callback)
 # Bucle principal mejorado
 while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
     frame = np.zeros((MENU_HEIGHT, MENU_WIDTH, 3), dtype=np.uint8)
-    
+
     if current_menu == MAIN_MENU:
         draw_main_menu(frame)
     else:
         draw_settings_menu(frame)
-    
+
     cv2.imshow(WINDOW_NAME, frame)
-    
+
     # Manejo de salida con timeout controlado
     key = cv2.waitKey(30)
     if key == 27 or cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:
