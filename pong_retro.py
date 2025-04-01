@@ -19,7 +19,7 @@ pong_sound = load_sound("pong.mpeg")
 win_sound = load_sound("win.mp3")
 countdown_sound = load_sound("countdown.mp3")
 
-# Configuarición del tiempo de espera
+# Configuración del tiempo de espera
 COUNT_DOWN = 3
 
 # Configuración de la posición en el eje coordinal
@@ -123,35 +123,26 @@ def draw_score(frame):
     cv2.putText(frame, f"Right: {right_score}", (WIDTH - 200, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
 def draw_shadow(frame):
-    # Crear una máscara negra semitransparente (canales BGR con alpha)
     overlay = frame.copy()
     cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
-    
-    # Aplicar la máscara sobre el frame original con transparencia
-    alpha = 0.7  # Factor de transparencia (0 = totalmente transparente, 1 = totalmente opaco)
+    alpha = 0.7
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
 def draw_stop(frame, hand_data):
     global ballSpeedX, ballSpeedY
-    # Variable estática para guardar el estado anterior
     if not hasattr(draw_stop, "prev_players"):
         draw_stop.prev_players = 0
         draw_stop.countdown_active = False
     
-    # Contar jugadores detectados
     num_players = len(hand_data)
 
-    # Usamos un bucle while para gestionar el estado del juego
-    while num_players < 2:  # Mientras no haya 2 jugadores
-        # Aplicar sombra semi-transparente (solo una vez)
+    while num_players < 2:
         if not draw_stop.countdown_active:
             draw_shadow(frame)
     
-        # Detener el movimiento de la bola
         ballSpeedX = 0
         ballSpeedY = 0
     
-        # Mostrar mensaje central con el número de jugadores
         message = f"Jugadores detectados: {num_players}/2"
         text_size = cv2.getTextSize(message, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
         text_x = (WIDTH - text_size[0]) // 2
@@ -160,31 +151,24 @@ def draw_stop(frame, hand_data):
         cv2.putText(frame, message, (text_x, text_y), 
                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         
-        # Guardar el estado actual
         draw_stop.prev_players = num_players
         draw_stop.countdown_active = False
         break
 
-    else:  # Este else corresponde al while (se ejecuta si no se entró en el while)
-        # Si acabamos de salir del estado de espera (antes <2, ahora 2)
+    else:
         if draw_stop.prev_players < 2 and num_players == 2:
             draw_stop.countdown_active = True
             
-            # Guardar una copia del frame original sin sombra
             original_frame = frame.copy()
             
-            # Mostrar cuenta atrás
             for i in range(COUNT_DOWN, 0, -1):
-                # Restaurar el frame original (sin sombra acumulada)
                 frame[:] = original_frame[:]
                 
-                # Aplicar sombra solo una vez
                 overlay = frame.copy()
                 cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
                 alpha = 0.7
                 cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
                 
-                # Mostrar número de cuenta atrás
                 count_text = str(i)
                 text_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 3, 5)[0]
                 text_x = (WIDTH - text_size[0]) // 2
@@ -196,33 +180,25 @@ def draw_stop(frame, hand_data):
                 cv2.imshow("Pong AR - Turn-Based", frame)
                 if countdown_sound:
                     countdown_sound.play()
-                cv2.waitKey(1000)  # Esperar 1 segundo
+                cv2.waitKey(1000)
             
-            # Después de la cuenta atrás, reanudar el juego
             draw_stop.countdown_active = False
             ballSpeedX = MIN_SPEED if last_touched == 2 else -MIN_SPEED
             ballSpeedY = MIN_SPEED
         
-        # Guardar el estado actual
         draw_stop.prev_players = num_players
 
 def speed_up():
     global ballSpeedX, ballSpeedY
     
-    # Factor de incremento de velocidad (10% de aumento por golpe)
     SPEED_INCREASE_FACTOR = 1.1
     
-    # Aumentar velocidad en X manteniendo la dirección
     ballSpeedX = abs(ballSpeedX) * SPEED_INCREASE_FACTOR * (1 if ballSpeedX > 0 else -1)
-    
-    # Aumentar velocidad en Y manteniendo la dirección
     ballSpeedY = abs(ballSpeedY) * SPEED_INCREASE_FACTOR * (1 if ballSpeedY > 0 else -1)
     
-    # Aplicar límite de velocidad en X
     if abs(ballSpeedX) > MAX_SPEED:
         ballSpeedX = MAX_SPEED * (1 if ballSpeedX > 0 else -1)
     
-    # Aplicar límite de velocidad en Y
     if abs(ballSpeedY) > MAX_SPEED:
         ballSpeedY = MAX_SPEED * (1 if ballSpeedY > 0 else -1)
 
@@ -232,11 +208,9 @@ def update_ball_position(hand_data):
     next_x = ballPosition[0] + ballSpeedX
     next_y = ballPosition[1] + ballSpeedY
 
-    # Rebotar en bordes superior/inferior
     if next_y <= 0 or next_y >= HEIGHT:
         ballSpeedY = -ballSpeedY
 
-    # Detectar colisión con los rectángulos
     if (POS_HORIZONTAL_IZQUIERDA - RECTANGULO_WIDTH // 2 <= next_x <= POS_HORIZONTAL_IZQUIERDA + RECTANGULO_WIDTH // 2 and 
         left_paddle_y <= next_y <= left_paddle_y + RECTANGULO_HEIGHT):
         if last_touched != 1:
@@ -244,9 +218,8 @@ def update_ball_position(hand_data):
             last_touched = 1
             speed_up()
             if pong_sound:
-                # Crear un nuevo canal para el sonido con panning izquierdo
                 channel = pygame.mixer.Channel(0)
-                channel.set_volume(1.0, 0.0)  # Izquierdo: 1.0, Derecho: 0.0
+                channel.set_volume(1.0, 0.0)
                 channel.play(pong_sound)
 
     elif (POS_HORIZONTAL_DERECHA - RECTANGULO_WIDTH // 2 <= next_x <= POS_HORIZONTAL_DERECHA + RECTANGULO_WIDTH // 2 and 
@@ -256,33 +229,34 @@ def update_ball_position(hand_data):
             last_touched = 2
             speed_up()
             if pong_sound:
-                # Crear un nuevo canal para el sonido con panning derecho
                 channel = pygame.mixer.Channel(1)
-                channel.set_volume(0.0, 1.0)  # Izquierdo: 0.0, Derecho: 1.0
+                channel.set_volume(0.0, 1.0)
                 channel.play(pong_sound)
 
-    # Actualizar la posición de la bola
     ballPosition[0] = next_x
     ballPosition[1] = next_y
 
-    # Puntos cuando la bola cruza los límites
     if ballPosition[0] <= 0:
         right_score += 1
         last_touched = None
-        # Resetear la velocidad a la original cuando se marca un punto
         ballSpeedX = MIN_SPEED
         ballSpeedY = MIN_SPEED
         if win_sound:
-            win_sound.play()
+            # Usamos el canal 2 para el sonido de victoria (derecho)
+            channel = pygame.mixer.Channel(2)
+            channel.set_volume(0.0, 1.0)  # Solo derecho
+            channel.play(win_sound)
         ballPosition = [WIDTH // 2, HEIGHT // 2]
     elif ballPosition[0] >= WIDTH:
         left_score += 1
         last_touched = None
-        # Resetear la velocidad a la original cuando se marca un punto
         ballSpeedX = MIN_SPEED
         ballSpeedY = MIN_SPEED
         if win_sound:
-            win_sound.play()
+            # Usamos el canal 3 para el sonido de victoria (izquierdo)
+            channel = pygame.mixer.Channel(3)
+            channel.set_volume(1.0, 0.0)  # Solo izquierdo
+            channel.play(win_sound)
         ballPosition = [WIDTH // 2, HEIGHT // 2]
 
 cap = cv2.VideoCapture(0)
