@@ -200,11 +200,12 @@ def update_ball_position(hand_data):
     # Rebotar en bordes superior/inferior
     if next_y <= 0 or next_y >= HEIGHT:
         ballSpeedY = -ballSpeedY
+        if audio_system:  # Reproducir sonido de rebote con pared
+            audio_system.play("wall")
 
     # Verificar colisiones con los rectángulos de las manos
     collision = False
     for label, ((min_x, min_y), (max_x, max_y)), hand_tracker in hand_data:
-        # Verificar si la pelota está dentro del área extendida del rectángulo
         if (min_x - BALL_SIZE <= next_x <= max_x + BALL_SIZE and
             min_y - BALL_SIZE <= next_y <= max_y + BALL_SIZE):
 
@@ -213,26 +214,29 @@ def update_ball_position(hand_data):
             overlap_right = abs(next_x - max_x)
             overlap_top = abs(next_y - min_y)
             overlap_bottom = abs(next_y - max_y)
-
-            # Encontrar el menor solapamiento para determinar el lado de colisión
             min_overlap = min(overlap_left, overlap_right, overlap_top, overlap_bottom)
 
             if last_touched != label:
                 if min_overlap == overlap_left or min_overlap == overlap_right:
                     # Colisión horizontal: invertir X y aumentar velocidad
                     ballSpeedX = -ballSpeedX * 1.1
+                    random_direction = random.choice([-1, 1])
+                    ballSpeedY = random.uniform(2, 5) * random_direction
 
-                    # Aplicar dirección aleatoria en el eje Y
-                    random_direction = random.choice([-1, 1])  # -1 para arriba, 1 para abajo
-                    ballSpeedY = random.uniform(2, 5) * random_direction  # Rango de velocidad moderado
+                    # Reproducir sonido direccional
+                    if audio_system:
+                        audio_system.play(label)  # "left" o "right"
 
                 elif min_overlap == overlap_top or min_overlap == overlap_bottom:
                     # Colisión vertical: invertir Y
                     ballSpeedY = -ballSpeedY
-                    # También añadimos un pequeño componente aleatorio en X
                     ballSpeedX += random.uniform(-1, 1)
 
-                # Asegurar que la pelota no rebote hacia atrás
+                    # Sonido de rebote en borde de pala
+                    if audio_system:
+                        audio_system.play("wall")
+
+                # Corrección de rebote
                 if (ballSpeedX > 0 and next_x < min_x) or (ballSpeedX < 0 and next_x > max_x):
                     ballSpeedX = -ballSpeedX
 
@@ -245,8 +249,6 @@ def update_ball_position(hand_data):
 
                 last_touched = label
                 collision = True
-                if pong_sound:
-                    pong_sound.play()
                 break
 
     # Actualizar posición
@@ -257,14 +259,14 @@ def update_ball_position(hand_data):
     if ballPosition[0] <= 0:
         right_score += 1
         last_touched = None
-        if win_sound:
-            win_sound.play()
+        if audio_system:
+            audio_system.play("score_right")
         reset_ball()
     elif ballPosition[0] >= WIDTH:
         left_score += 1
         last_touched = None
-        if win_sound:
-            win_sound.play()
+        if audio_system:
+            audio_system.play("score_left")
         reset_ball()
 
 def reset_ball():
