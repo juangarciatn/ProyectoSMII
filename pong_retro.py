@@ -5,11 +5,15 @@ import pygame
 import os
 import time
 
-# Inicializar pygame para sonidos
-pygame.mixer.init()
+# Inicializar pygame para sonidos (2 canales estéreo)
+pygame.mixer.init(frequency=44100, size=-16, channels=2)
 
 def load_sound(filename):
-    return pygame.mixer.Sound(filename) if os.path.exists(filename) else None
+    if not os.path.exists(filename):
+        return None
+    sound = pygame.mixer.Sound(filename)
+    sound.set_volume(1.0)  # Volumen máximo por defecto
+    return sound
 
 pong_sound = load_sound("pong.mpeg")
 win_sound = load_sound("win.mp3")
@@ -37,7 +41,7 @@ BALL_SIZE = 10
 MIN_SPEED = 5
 
 # Máxima velocidad de la bola
-MAX_SPEED = 15
+MAX_SPEED = 30
 
 # Velocidad de la bola
 ballSpeedX = MIN_SPEED
@@ -203,7 +207,7 @@ def draw_stop(frame, hand_data):
         draw_stop.prev_players = num_players
 
 def speed_up():
-    global ballSpeedX, ballSpeedY, ORIGINAL_BALLSPEED_X, ORIGINAL_BALLSPEED_Y
+    global ballSpeedX, ballSpeedY
     
     # Factor de incremento de velocidad (10% de aumento por golpe)
     SPEED_INCREASE_FACTOR = 1.1
@@ -221,9 +225,6 @@ def speed_up():
     # Aplicar límite de velocidad en Y
     if abs(ballSpeedY) > MAX_SPEED:
         ballSpeedY = MAX_SPEED * (1 if ballSpeedY > 0 else -1)
-    
-    # Opcional: Mostrar la velocidad actual (útil para debugging)
-    # print(f"Velocidad actual: X={ballSpeedX:.2f}, Y={ballSpeedY:.2f}")
 
 def update_ball_position(hand_data):
     global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score, last_touched
@@ -241,18 +242,24 @@ def update_ball_position(hand_data):
         if last_touched != 1:
             ballSpeedX = -ballSpeedX
             last_touched = 1
-            speed_up()  # Aumentar velocidad al golpear la raqueta
+            speed_up()
             if pong_sound:
-                pong_sound.play()
+                # Crear un nuevo canal para el sonido con panning izquierdo
+                channel = pygame.mixer.Channel(0)
+                channel.set_volume(1.0, 0.0)  # Izquierdo: 1.0, Derecho: 0.0
+                channel.play(pong_sound)
 
     elif (POS_HORIZONTAL_DERECHA - RECTANGULO_WIDTH // 2 <= next_x <= POS_HORIZONTAL_DERECHA + RECTANGULO_WIDTH // 2 and 
           right_paddle_y <= next_y <= right_paddle_y + RECTANGULO_HEIGHT):
         if last_touched != 2:
             ballSpeedX = -ballSpeedX
             last_touched = 2
-            speed_up()  # Aumentar velocidad al golpear la raqueta
+            speed_up()
             if pong_sound:
-                pong_sound.play()
+                # Crear un nuevo canal para el sonido con panning derecho
+                channel = pygame.mixer.Channel(1)
+                channel.set_volume(0.0, 1.0)  # Izquierdo: 0.0, Derecho: 1.0
+                channel.play(pong_sound)
 
     # Actualizar la posición de la bola
     ballPosition[0] = next_x
