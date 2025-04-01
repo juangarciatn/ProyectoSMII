@@ -12,7 +12,8 @@ REQUIRED_PACKAGES = {
     "numpy": "numpy==1.26.4",
     "mediapipe": "mediapipe==0.10.21",
     "imageio": "imageio==2.34.0",
-    "Pillow": "Pillow==10.3.0"
+    "Pillow": "Pillow==10.3.0",
+    "pygame": "pygame==2.5.2"
 }
 
 def install_dependencies():
@@ -32,12 +33,12 @@ def install_dependencies():
         )
     
     print("Verificando dependencias...")
-    subprocess.run([python_path, "-c", "import cv2, numpy, mediapipe, imageio, PIL"], check=True)
+    subprocess.run([python_path, "-c", "import cv2, numpy, mediapipe, pygame, imageio, PIL"], check=True)
     
     os.execv(python_path, [python_path, __file__])
 
 try:
-    import cv2, numpy as np, mediapipe
+    import cv2, numpy as np, mediapipe, pygame
     from PIL import Image, ImageSequence
 except ImportError:
     install_dependencies()
