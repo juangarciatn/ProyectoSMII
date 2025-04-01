@@ -7,13 +7,25 @@ import time
 import random
 from collections import deque
 
-# Inicializar pygame para sonidos
-pygame.mixer.init()
+try:
+    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+    print("pygame.mixer inicializado correctamente")
+except Exception as e:
+    print(f"Error inicializando pygame.mixer: {e}")
+
+
+# Añade esto después de inicializar el mixer
+pygame.mixer.music.set_volume(1.0)  # Volumen global al máximo
+
+# Verifica que los archivos existan en estas rutas exactas
+print("Verificando archivos:")
+print(f"Existe pong.mp3: {os.path.exists('pong.mp3')}")
+print(f"Existe win.mp3: {os.path.exists('win.mp3')}")
 
 def load_sound(filename):
     return pygame.mixer.Sound(filename) if os.path.exists(filename) else None
 
-pong_sound = load_sound("pong.mpeg")
+pong_sound = load_sound("pong.mp3")
 win_sound = load_sound("win.mp3")
 
 # Configuración de la ventana
@@ -102,6 +114,64 @@ class HandTracker:
 # Inicializar trackers para cada mano
 hand_trackers = [HandTracker(), HandTracker()]
 
+import pygame
+import numpy as np
+
+import pygame
+
+class AudioSystem:
+    def __init__(self):
+        pygame.mixer.init()
+        self.sounds = {
+            "left": self._load_sound("pong.mp3"),
+            "right": self._load_sound("pong.mp3"),
+            "wall": self._load_sound("pong.mp3"),
+            "score": self._load_sound("win.mp3"),
+            "start": self._load_sound("win.mp3")
+        }
+        self.channels = {
+            "left": pygame.mixer.Channel(0),
+            "right": pygame.mixer.Channel(1)
+        }
+
+    def _load_sound(self, path):
+        try:
+            return pygame.mixer.Sound(path)
+        except pygame.error as e:
+            print(f"Error cargando {path}: {e}")
+            return None
+
+    def play(self, sound_name):
+        if sound_name in self.sounds and self.sounds[sound_name]:
+            if sound_name == "left":
+                self.channels["left"].play(self.sounds[sound_name])
+                self.channels["left"].set_volume(1.0, 0.0)  # Solo canal izquierdo
+            elif sound_name == "right":
+                self.channels["right"].play(self.sounds[sound_name])
+                self.channels["right"].set_volume(0.0, 1.0)  # Solo canal derecho
+            else:
+                self.sounds[sound_name].play()  # Otros sonidos normales
+        else:
+            print(f"Advertencia: sonido '{sound_name}' no disponible.")
+
+
+
+# Inicialización del sistema de audio
+audio_system = AudioSystem()
+
+# Prueba de sonido si los archivos están disponibles
+if pong_sound:
+    pong_sound.play()
+if win_sound:
+    win_sound.play()
+
+# Inicialización compatible
+audio_system = AudioSystem()
+
+# Añade esto después de crear audio_system
+test_sound = pygame.mixer.Sound(buffer=bytes([128, 255] * 1024))  # Sonido de prueba
+test_sound.play()
+
 def get_hand_rect(hand_landmarks):
     x_coords = [lm.x * WIDTH for lm in hand_landmarks.landmark]
     y_coords = [lm.y * HEIGHT for lm in hand_landmarks.landmark]
@@ -188,6 +258,23 @@ def draw_middle_line(frame):
 
 import random
 
+def reset_ball():
+    global ballPosition, ballSpeedX, ballSpeedY, last_touched
+
+    # Posición inicial centrada
+    ballPosition = [WIDTH // 2, HEIGHT // 2]
+
+    # Velocidad inicial aleatoria
+    ballSpeedX = random.choice([-4, 4])
+    ballSpeedY = random.uniform(-2, 2)
+
+    # Reinicia quién tocó último
+    last_touched = None
+
+    # Sonido de inicio
+    if audio_system:
+        audio_system.play("start")
+
 def update_ball_position(hand_data):
     global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score, last_touched
 
@@ -200,16 +287,15 @@ def update_ball_position(hand_data):
     # Rebotar en bordes superior/inferior
     if next_y <= 0 or next_y >= HEIGHT:
         ballSpeedY = -ballSpeedY
-        if audio_system:  # Reproducir sonido de rebote con pared
+        if audio_system:
             audio_system.play("wall")
 
-    # Verificar colisiones con los rectángulos de las manos
+    # Verificar colisiones con las manos
     collision = False
     for label, ((min_x, min_y), (max_x, max_y)), hand_tracker in hand_data:
         if (min_x - BALL_SIZE <= next_x <= max_x + BALL_SIZE and
             min_y - BALL_SIZE <= next_y <= max_y + BALL_SIZE):
 
-            # Determinar el lado principal de colisión
             overlap_left = abs(next_x - min_x)
             overlap_right = abs(next_x - max_x)
             overlap_top = abs(next_y - min_y)
@@ -218,29 +304,23 @@ def update_ball_position(hand_data):
 
             if last_touched != label:
                 if min_overlap == overlap_left or min_overlap == overlap_right:
-                    # Colisión horizontal: invertir X y aumentar velocidad
                     ballSpeedX = -ballSpeedX * 1.1
                     random_direction = random.choice([-1, 1])
                     ballSpeedY = random.uniform(2, 5) * random_direction
 
-                    # Reproducir sonido direccional
                     if audio_system:
-                        audio_system.play(label)  # "left" o "right"
+                        audio_system.play(label)
 
                 elif min_overlap == overlap_top or min_overlap == overlap_bottom:
-                    # Colisión vertical: invertir Y
                     ballSpeedY = -ballSpeedY
                     ballSpeedX += random.uniform(-1, 1)
 
-                    # Sonido de rebote en borde de pala
                     if audio_system:
                         audio_system.play("wall")
 
-                # Corrección de rebote
                 if (ballSpeedX > 0 and next_x < min_x) or (ballSpeedX < 0 and next_x > max_x):
                     ballSpeedX = -ballSpeedX
 
-                # Limitar velocidad máxima
                 speed_magnitude = np.sqrt(ballSpeedX**2 + ballSpeedY**2)
                 if speed_magnitude > MAX_BALL_SPEED:
                     scale_factor = MAX_BALL_SPEED / speed_magnitude
@@ -260,13 +340,13 @@ def update_ball_position(hand_data):
         right_score += 1
         last_touched = None
         if audio_system:
-            audio_system.play("score_right")
+            audio_system.play("score")
         reset_ball()
     elif ballPosition[0] >= WIDTH:
         left_score += 1
         last_touched = None
         if audio_system:
-            audio_system.play("score_left")
+            audio_system.play("score")
         reset_ball()
 
 def reset_ball():
