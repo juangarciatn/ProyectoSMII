@@ -4,12 +4,15 @@ import numpy as np
 import pygame
 import os
 import time
+import subprocess
 
 # Inicializar pygame para sonidos (2 canales estéreo)
 pygame.mixer.init(frequency=44100, size=-16, channels=2)
 
 def scape():
      print("Saliendo del pong retro...")
+     cv2.destroyAllWindows()
+     subprocess.Popen(["python", "menu.py"])
 
 def load_sound(filename):
     if not os.path.exists(filename):
