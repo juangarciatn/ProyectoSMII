@@ -8,6 +8,9 @@ import time
 # Inicializar pygame para sonidos (2 canales estéreo)
 pygame.mixer.init(frequency=44100, size=-16, channels=2)
 
+def scape():
+     print("Saliendo del pong retro...")
+
 def load_sound(filename):
     if not os.path.exists(filename):
         return None
@@ -183,8 +186,8 @@ def draw_stop(frame, hand_data):
                 cv2.waitKey(1000)
             
             draw_stop.countdown_active = False
-            ballSpeedX = MIN_SPEED if last_touched == 2 else -MIN_SPEED
-            ballSpeedY = MIN_SPEED
+            ballSpeedX = -MIN_SPEED if last_touched == 2 else MIN_SPEED
+            ballSpeedY = -MIN_SPEED
         
         draw_stop.prev_players = num_players
 
@@ -285,6 +288,7 @@ while cap.isOpened():
     cv2.imshow("Pong AR - Turn-Based", frame)
     
     if cv2.waitKey(1) & 0xFF == ord('q'):
+        scape()
         break
 
 cap.release()
