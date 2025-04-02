@@ -139,13 +139,18 @@ def draw_stop(frame, hand_data):
     if not hasattr(draw_stop, "prev_players"):
         draw_stop.prev_players = 0
         draw_stop.countdown_active = False
+        draw_stop.saved_speed = None  # Para guardar la velocidad original
     
     num_players = len(hand_data)
 
     while num_players < 2:
         if not draw_stop.countdown_active:
             draw_shadow(frame)
-    
+        
+        # Guardar la velocidad actual si no lo hemos hecho ya
+        if draw_stop.saved_speed is None:
+            draw_stop.saved_speed = (ballSpeedX, ballSpeedY)
+        
         ballSpeedX = 0
         ballSpeedY = 0
     
@@ -189,8 +194,13 @@ def draw_stop(frame, hand_data):
                 cv2.waitKey(1000)
             
             draw_stop.countdown_active = False
-            ballSpeedX = -MIN_SPEED if last_touched == 2 else MIN_SPEED
-            ballSpeedY = -MIN_SPEED
+            # Restaurar la velocidad guardada o usar la velocidad por defecto
+            if draw_stop.saved_speed is not None:
+                ballSpeedX, ballSpeedY = draw_stop.saved_speed
+                draw_stop.saved_speed = None
+            else:
+                ballSpeedX = -MIN_SPEED if last_touched == 2 else MIN_SPEED
+                ballSpeedY = -MIN_SPEED
         
         draw_stop.prev_players = num_players
 
