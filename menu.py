@@ -212,12 +212,14 @@ def async_hand_detection():
             idx = mp_hands.HandLandmark.INDEX_FINGER_TIP
             thumb = mp_hands.HandLandmark.THUMB_TIP
             
-            idx_x = 1.0 - hand.landmark[idx].x
+            # Modificación 1: Eliminar la inversión en el eje X
+            idx_x = hand.landmark[idx].x  # Eliminado 1.0 - 
             idx_y = hand.landmark[idx].y
-            thumb_x = 1.0 - hand.landmark[thumb].x
+            thumb_x = hand.landmark[thumb].x  # Eliminado 1.0 - 
             
             cursor_pos = (int(idx_x * screen_width), int(idx_y * screen_height))
-            click_detected = np.hypot(idx_x - thumb_x, idx_y - hand.landmark[thumb].y) < 0.03
+            # Modificación 2: Aumentar sensibilidad del click
+            click_detected = np.hypot(idx_x - thumb_x, idx_y - hand.landmark[thumb].y) < 0.05  # 0.03 -> 0.05
 
 threading.Thread(target=async_hand_detection, daemon=True).start()
 
@@ -251,8 +253,14 @@ def handle_clicks():
                     args = [venv_python, script]
                     if debug_enabled: args.append("debug")
                     if rectangle_enabled: args.append("rectangles")
-                    subprocess.Popen(args)
-                    cv2.destroyAllWindows()
+                    
+                    # Liberar recursos antes de lanzar el juego
+                    cap.release()  # Liberar cámara
+                    cv2.destroyAllWindows()  # Cerrar ventanas
+                    
+                    # Ejecutar el juego y salir del menú
+                    subprocess.Popen(args, close_fds=True)  # close_fds importante para Linux/macOS
+                    os._exit(0)  # Salida inmediata y limpia
                 elif button_name == 'settings':
                     current_menu = 1
             else:
