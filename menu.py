@@ -4,6 +4,9 @@ import subprocess
 import os
 import venv
 
+# --- Variables globales para nombres de scripts ---
+PONG2 = "pong2.py"
+PONGRETRO = "pong_retro.py"
 
 REQUIRED_PACKAGES = {
     "cv2": "opencv-python==4.9.0.80",
@@ -12,7 +15,7 @@ REQUIRED_PACKAGES = {
     "imageio": "imageio==2.34.0",
     "Pillow": "Pillow==10.3.0",
     "PyOpenAL": "PyOpenAL==0.7.11a1",
-    "pygame": "pygame==2.5.0"
+    "pygame": "pygame==2.5.0"   
 }
 
 def install_dependencies():
@@ -45,12 +48,14 @@ except ImportError:
 GIF_PATH = "ponggif.gif"
 WINDOW_NAME = "PongMenu"
 selected_version = "Pong 2"
+debug_enabled = False
+rectangle_enabled = False
 
-# Configurar ventana en pantalla completa primero
+# Configurar ventana en pantalla completa
 cv2.namedWindow(WINDOW_NAME, cv2.WND_PROP_FULLSCREEN)
 cv2.setWindowProperty(WINDOW_NAME,cv2.WND_PROP_FULLSCREEN,cv2.WINDOW_FULLSCREEN)
 
-# Obtener dimensiones reales de la pantalla
+# Obtener dimensiones de pantalla
 screen_width = cv2.getWindowImageRect(WINDOW_NAME)[2]
 screen_height = cv2.getWindowImageRect(WINDOW_NAME)[3]
 
@@ -70,9 +75,11 @@ button_layout = {
         'exit': (0.25, 0.6, 0.75, 0.75)
     },
     'settings': {
-        'pong2': (0.25, 0.2, 0.75, 0.35),
-        'retro': (0.25, 0.4, 0.75, 0.55),
-        'back': (0.25, 0.6, 0.75, 0.75)
+        'pong2': (0.25, 0.2, 0.75, 0.3),
+        'retro': (0.25, 0.35, 0.75, 0.45),
+        'debug': (0.25, 0.5, 0.75, 0.6),
+        'rectangle': (0.25, 0.65, 0.75, 0.75),
+        'back': (0.25, 0.8, 0.75, 0.9)
     }
 }
 
@@ -102,7 +109,7 @@ def load_gif():
 gif_frames, frame_delay = load_gif()
 current_gif_frame = 0
 
-def draw_button(frame, text, position):
+def draw_button(frame, text, position, checked=False):
     (x1, y1), (x2, y2) = position
     button_width = x2 - x1
     
@@ -113,7 +120,13 @@ def draw_button(frame, text, position):
     cv2.rectangle(overlay, (x1, y1), (x2, y2), (30, 30, 30, 200), -1)
     cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
     
-    cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 255, 255), thickness)
+    border_color = (0, 255, 0, 255) if checked else (255, 255, 255, 255)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), border_color, thickness)
+    
+    if checked:
+        cv2.putText(frame, "✓", (x2 - 50, y1 + 50), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0, 255), thickness)
+    
     (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, font_scale, thickness)
     tx = x1 + ((x2 - x1) - tw) // 2
     ty = y1 + ((y2 - y1) + th) // 2
@@ -126,11 +139,7 @@ def draw_main_menu(frame):
     title_scale = max(0.8, screen_width / 1600)
     title_thickness = max(1, int(screen_width / 800))
     
-    cv2.putText(frame, "", 
-                (int(screen_width*0.15), int(screen_height*0.1)),
-                cv2.FONT_HERSHEY_SIMPLEX, title_scale, (0, 0, 0, 255), 
-                title_thickness + 2)
-    cv2.putText(frame, "", 
+    cv2.putText(frame, "PONG ARCADE", 
                 (int(screen_width*0.15), int(screen_height*0.1)),
                 cv2.FONT_HERSHEY_SCRIPT_COMPLEX, title_scale, (255, 255, 0, 255), 
                 title_thickness)
@@ -148,11 +157,18 @@ def draw_settings_menu(frame):
                 (int(screen_width*0.1), int(screen_height*0.15)), 
                 cv2.FONT_HERSHEY_SIMPLEX, title_scale*0.8, (200, 200, 0, 255), 2)
     
-    for text, key in [("Pong 2", 'pong2'), ("Version Retro", 'retro'), ("Volver", 'back')]:
-        draw_button(frame, text, get_button_coords(button_layout, 'settings', key))
+    draw_button(frame, "Pong 2", get_button_coords(button_layout, 'settings', 'pong2'), 
+               checked=(selected_version == "Pong 2"))
+    draw_button(frame, "Version Retro", get_button_coords(button_layout, 'settings', 'retro'), 
+               checked=(selected_version == "retro"))
+    draw_button(frame, "Modo Debug", get_button_coords(button_layout, 'settings', 'debug'), 
+               checked=debug_enabled)
+    draw_button(frame, "Modo Rectangulo", get_button_coords(button_layout, 'settings', 'rectangle'), 
+               checked=rectangle_enabled)
+    draw_button(frame, "Volver", get_button_coords(button_layout, 'settings', 'back'))
 
 def mouse_callback(event, x, y, flags, param):
-    global current_menu, selected_version
+    global current_menu, selected_version, debug_enabled, rectangle_enabled
     if event == cv2.EVENT_LBUTTONDOWN:
         try:
             menu_type = 'main' if current_menu == MAIN_MENU else 'settings'
@@ -164,7 +180,11 @@ def mouse_callback(event, x, y, flags, param):
                     if current_menu == MAIN_MENU:
                         if button_name == 'play':
                             venv_python = os.path.join(os.path.dirname(__file__), "pong_venv", "bin", "python")
-                            subprocess.Popen([venv_python, "pong2.py" if selected_version == "Pong 2" else "pong_retro.py"])
+                            script = PONG2 if selected_version == "Pong 2" else PONGRETRO
+                            args = [venv_python, script]
+                            if debug_enabled: args.append("--debug")
+                            if rectangle_enabled: args.append("--rectangle")
+                            subprocess.Popen(args)
                             cv2.destroyAllWindows()
                         elif button_name == 'settings':
                             current_menu = SETTINGS_MENU
@@ -175,6 +195,10 @@ def mouse_callback(event, x, y, flags, param):
                             selected_version = "Pong 2"
                         elif button_name == 'retro':
                             selected_version = "retro"
+                        elif button_name == 'debug':
+                            debug_enabled = not debug_enabled
+                        elif button_name == 'rectangle':
+                            rectangle_enabled = not rectangle_enabled
                         elif button_name == 'back':
                             current_menu = MAIN_MENU
                     break
