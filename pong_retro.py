@@ -11,7 +11,8 @@ import random
 pygame.mixer.init(frequency=44100, size=-16, channels=2)
 
 # Constantes del juego
-COUNT_DOWN = 3
+COUNT_DOWN_LEFT_HAND = 2
+COUNT_DOWN_RIGHT_HAND = 2
 POS_HORIZONTAL_IZQUIERDA = 30
 POS_HORIZONTAL_DERECHA = 610
 RECTANGULO_WIDTH = 30
@@ -77,25 +78,24 @@ def process_hands(results):
     global left_paddle_y, right_paddle_y
     
     hand_data = []
+    left_hand_detected = False
+    right_hand_detected = False
 
     if results.multi_hand_landmarks:
-        hands_sorted = sorted(
-            zip(results.multi_hand_landmarks, results.multi_handedness),
-            key=lambda h: h[0].landmark[mp_hands.HandLandmark.WRIST].x
-        )
-
-        for idx, (landmarks, handedness) in enumerate(hands_sorted, 1):
-            label = idx
+        for landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
+            hand_label = handedness.classification[0].label  # 'Left' o 'Right'
             rect = get_hand_rect(landmarks)
-            hand_data.append((label, rect))
+            hand_data.append((hand_label, rect))
 
             center_y = (rect[0][1] + rect[1][1]) // 2
-            if label == 1:
+            if hand_label == 'Left':
+                left_hand_detected = True
                 left_paddle_y = max(0, min(HEIGHT - RECTANGULO_HEIGHT, center_y - RECTANGULO_HEIGHT // 2))
-            elif label == 2:
+            elif hand_label == 'Right':
+                right_hand_detected = True
                 right_paddle_y = max(0, min(HEIGHT - RECTANGULO_HEIGHT, center_y - RECTANGULO_HEIGHT // 2))
     
-    return hand_data
+    return hand_data, left_hand_detected, right_hand_detected
 
 def draw_ball(frame):
     try:
@@ -128,71 +128,57 @@ def draw_shadow(frame):
     alpha = 0.7
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
-def draw_stop(frame, hand_data):
-    global ballSpeedX, ballSpeedY
-    if not hasattr(draw_stop, "prev_players"):
-        draw_stop.prev_players = 0
-        draw_stop.countdown_active = False
-        draw_stop.saved_speed = None
+def draw_stop(frame, hand_data, left_hand_detected, right_hand_detected):
+    global COUNT_DOWN_LEFT_HAND, COUNT_DOWN_RIGHT_HAND
     
-    num_players = len(hand_data)
-
-    while num_players < 2:
-        if not draw_stop.countdown_active:
-            draw_shadow(frame)
-        
-        if draw_stop.saved_speed is None:
-            draw_stop.saved_speed = (ballSpeedX, ballSpeedY)
-        
-        ballSpeedX = 0
-        ballSpeedY = 0
-    
-        message = f"Jugadores detectados: {num_players}/2"
-        text_size = cv2.getTextSize(message, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
-        text_x = (WIDTH - text_size[0]) // 2
-        text_y = (HEIGHT + text_size[1]) // 2
-    
-        cv2.putText(frame, message, (text_x, text_y), 
-               cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        
-        draw_stop.prev_players = num_players
-        draw_stop.countdown_active = False
-        break
-
+    # Contador para mano izquierda
+    if not left_hand_detected:
+        text = "Left hand not detected!"
+        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+        text_x = (WIDTH // 4) - (text_size[0] // 2)  # Centrado en el lado izquierdo
+        text_y = HEIGHT // 4  # Más arriba (1/4 de la pantalla)
+        cv2.putText(frame, text, 
+                   (text_x, text_y), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        COUNT_DOWN_LEFT_HAND -= 1/30
     else:
-        if draw_stop.prev_players < 2 and num_players == 2:
-            draw_stop.countdown_active = True
-            original_frame = frame.copy()
-            
-            for i in range(COUNT_DOWN, 0, -1):
-                frame[:] = original_frame[:]
-                overlay = frame.copy()
-                cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
-                alpha = 0.7
-                cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-                
-                count_text = str(i)
-                text_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 3, 5)[0]
-                text_x = (WIDTH - text_size[0]) // 2
-                text_y = (HEIGHT + text_size[1]) // 2
-                
-                cv2.putText(frame, count_text, (text_x, text_y), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 255, 255), 5)
-                
-                cv2.imshow("Pong AR - Turn-Based", frame)
-                if countdown_sound:
-                    countdown_sound.play()
-                cv2.waitKey(1000)
-            
-            draw_stop.countdown_active = False
-            if draw_stop.saved_speed is not None:
-                ballSpeedX, ballSpeedY = draw_stop.saved_speed
-                draw_stop.saved_speed = None
-            else:
-                ballSpeedX = -MIN_SPEED if last_touched == 2 else MIN_SPEED
-                ballSpeedY = -MIN_SPEED
+        COUNT_DOWN_LEFT_HAND = 2
+    
+    # Contador para mano derecha
+    if not right_hand_detected:
+        text = "Right hand not detected!"
+        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+        text_x = (3 * WIDTH // 4) - (text_size[0] // 2)  # Centrado en el lado derecho
+        text_y = HEIGHT // 4  # Más arriba (1/4 de la pantalla)
+        cv2.putText(frame, text, 
+                   (text_x, text_y), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        COUNT_DOWN_RIGHT_HAND -= 1/30
+    else:
+        COUNT_DOWN_RIGHT_HAND = 2
+    
+    # Mensaje de pausa
+    if COUNT_DOWN_LEFT_HAND <= 0 or COUNT_DOWN_RIGHT_HAND <= 0:
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
+        alpha = 0.5
+        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
         
-        draw_stop.prev_players = num_players
+        pause_text = "JUEGO EN PAUSA"
+        pause_size = cv2.getTextSize(pause_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 3)[0]
+        cv2.putText(frame, pause_text, 
+                   (WIDTH // 2 - pause_size[0] // 2, HEIGHT // 2 - 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+        
+        continue_text = "Muestre ambas manos para continuar"
+        continue_size = cv2.getTextSize(continue_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+        cv2.putText(frame, continue_text, 
+                   (WIDTH // 2 - continue_size[0] // 2, HEIGHT // 2 + 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        return True
+    
+    return False
 
 def speed_up():
     global ballSpeedX, ballSpeedY
@@ -219,9 +205,9 @@ def update_ball_position(hand_data):
 
     if (POS_HORIZONTAL_IZQUIERDA - RECTANGULO_WIDTH//2 <= next_x <= POS_HORIZONTAL_IZQUIERDA + RECTANGULO_WIDTH//2 and 
         left_paddle_y <= next_y <= left_paddle_y + RECTANGULO_HEIGHT):
-        if last_touched != 1:
+        if last_touched != 'Left':
             ballSpeedX = -ballSpeedX
-            last_touched = 1
+            last_touched = 'Left'
             speed_up()
             if pong_sound:
                 channel = pygame.mixer.Channel(0)
@@ -230,9 +216,9 @@ def update_ball_position(hand_data):
 
     elif (POS_HORIZONTAL_DERECHA - RECTANGULO_WIDTH//2 <= next_x <= POS_HORIZONTAL_DERECHA + RECTANGULO_WIDTH//2 and 
           right_paddle_y <= next_y <= right_paddle_y + RECTANGULO_HEIGHT):
-        if last_touched != 2:
+        if last_touched != 'Right':
             ballSpeedX = -ballSpeedX
-            last_touched = 2
+            last_touched = 'Right'
             speed_up()
             if pong_sound:
                 channel = pygame.mixer.Channel(1)
@@ -276,15 +262,18 @@ def main():
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
         results = hands.process(rgb_frame)
-        hand_data = process_hands(results)
+        hand_data, left_detected, right_detected = process_hands(results)
         
         draw_shadow(frame)
         draw_ball(frame)
         draw_middle_line(frame)
         draw_score(frame)
         draw_paddles(frame)
-        update_ball_position(hand_data)
-        draw_stop(frame, hand_data)
+        
+        # Solo actualizar posición si no estamos en pausa
+        paused = draw_stop(frame, hand_data, left_detected, right_detected)
+        if not paused:
+            update_ball_position(hand_data)
         
         cv2.imshow("Pong AR - Turn-Based", frame)
         
