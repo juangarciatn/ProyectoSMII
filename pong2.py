@@ -5,6 +5,8 @@ import pygame
 import os
 import time
 import random
+import sys
+import subprocess
 from collections import deque
 
 try:
@@ -423,8 +425,10 @@ def main():
         draw_score(frame)
         update_ball_position(hand_data)
         draw_warnings(frame)
-        draw_game_status(frame)
-        draw_debug_info(frame)
+        if 'rectangles' in args:
+            draw_game_status(frame)
+        if 'debug' in args:
+            draw_debug_info(frame)
 
         # Dibujar rectángulos y etiquetas de manos
         if game_active or not game_paused:
@@ -436,10 +440,13 @@ def main():
         cv2.imshow("Pong AR - Turn-Based", frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
+            # Abre menu.py en un nuevo proceso
+            subprocess.Popen([sys.executable, "menu.py"])
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
+    args = sys.argv[1:]
     main()
