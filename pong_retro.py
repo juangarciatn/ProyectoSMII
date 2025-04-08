@@ -6,6 +6,7 @@ import os
 import time
 import subprocess
 import random
+import sys
 
 # Inicializar pygame
 pygame.mixer.init(frequency=44100, size=-16, channels=2)
@@ -18,7 +19,7 @@ RECTANGULO_WIDTH = 30
 RECTANGULO_HEIGHT = 90
 BALL_SIZE = 10
 MIN_SPEED = 5
-MAX_SPEED = 30
+MAX_SPEED = 40
 
 # Variables de pantalla
 WIDTH = 1280
@@ -29,8 +30,18 @@ POS_HORIZONTAL_DERECHA = 0
 # Estado del juego
 paused = False
 
-def scape():
+# Variable para modo debug
+DEBUG_MODE = False
+
+def close():
+    print("Closing game...")
+    cv2.destroyAllWindows()
+    pygame.quit()
+    sys.exit(0)
+
+def scape_to_menu():
     print("Leaving pong_retro.py...")
+    print("Going to menu.py...")
     cv2.destroyAllWindows()
     subprocess.Popen(["python", "menu.py"])
 
@@ -57,7 +68,10 @@ def initialize_game():
     global left_score, right_score, last_touched
     global hands, mp_hands, mp_drawing
     global WIDTH, HEIGHT, POS_HORIZONTAL_IZQUIERDA, POS_HORIZONTAL_DERECHA
-    global RECTANGULO_HEIGHT
+    global RECTANGULO_HEIGHT, DEBUG_MODE
+    
+    # Verificar si estamos en modo debug
+    DEBUG_MODE = len(sys.argv) > 1 and sys.argv[1].lower() == "debug"
     
     try:
         screen_info = pygame.display.Info()
@@ -257,6 +271,47 @@ def draw_pause_message(frame):
     except Exception as e:
         print(f"Error drawing pause message: {e}")
 
+def draw_debug_info(frame):
+    try:
+        if not DEBUG_MODE:
+            return
+            
+        font_scale = max(0.4, min(WIDTH, HEIGHT) / 1200)
+        thickness = max(1, int(font_scale * 1.5))
+        line_height = int(HEIGHT * 0.03)
+        start_y = HEIGHT - 20
+        
+        debug_info = [
+            f"Last Touched: {last_touched}",
+            f"Game State: {'PAUSED' if paused else 'RUNNING'}",
+            f"Right Hand Speed: {abs(ballSpeedX):.1f}",
+            f"Left Hand Speed: {abs(ballSpeedX):.1f}",
+            f"Ball Speed: ({abs(ballSpeedX):.1f}, {abs(ballSpeedY):.1f})",
+            f"Ball Position: ({ballPosition[0]:.1f}, {ballPosition[1]:.1f})"
+        ]
+        
+        # Calcular el ancho máximo del texto
+        text_width = max([cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0][0] for line in debug_info])
+        
+        # Fondo semitransparente para el texto de debug (esquina inferior izquierda)
+#        overlay = frame.copy()
+#        cv2.rectangle(overlay, 
+#                     (10, start_y - len(debug_info) * line_height - 10),
+#                     (20 + text_width, start_y + 10),
+#                     (0, 0, 0), -1)
+#        alpha = 0.5
+#        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+        
+        # Dibujar cada línea de información de debug
+        for i, line in enumerate(debug_info):
+            y_pos = start_y - (len(debug_info) - i - 1) * line_height
+            cv2.putText(frame, line,
+                       (15, y_pos),  # Posición X fija en 15 (izquierda)
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), thickness)
+            
+    except Exception as e:
+        print(f"Error drawing debug info: {e}")
+
 def speed_up():
     global ballSpeedX, ballSpeedY
     
@@ -362,6 +417,7 @@ def main():
             draw_middle_line(frame)
             draw_score(frame)
             draw_paddles(frame)
+            draw_debug_info(frame)
             
             if paused:
                 draw_pause_message(frame)
@@ -370,9 +426,12 @@ def main():
             
             cv2.imshow("Pong AR - Turn-Based", frame)
             
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                scape()
+            key = cv2.waitKey(1)
+            if key & 0xFF == ord('q'):
+                scape_to_menu()
                 break
+            elif key == 27:  # 27 es el código para la tecla ESC
+                close()
 
     except Exception as e:
         print(f"Bug in the game: {e}")
