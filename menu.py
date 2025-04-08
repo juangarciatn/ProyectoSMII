@@ -11,7 +11,8 @@ REQUIRED_PACKAGES = {
     "mediapipe": "mediapipe==0.10.21",
     "imageio": "imageio==2.34.0",
     "Pillow": "Pillow==10.3.0",
-    "PyOpenAL": "PyOpenAL==0.7.11a1"
+    "PyOpenAL": "PyOpenAL==0.7.11a1",
+    "pygame": "pygame==2.5.0"
 }
 
 def install_dependencies():
