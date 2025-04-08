@@ -15,7 +15,8 @@ REQUIRED_PACKAGES = {
     "imageio": "imageio==2.34.0",
     "Pillow": "Pillow==10.3.0",
     "PyOpenAL": "PyOpenAL==0.7.11a1",
-    "pygame": "pygame==2.5.0"   
+    "pygame": "pygame==2.5.0",
+    "screeninfo": "screeninfo==0.8.1"
 }
 
 def install_dependencies():
@@ -34,7 +35,7 @@ def install_dependencies():
             stdout=subprocess.DEVNULL
         )
     print("Verificando dependencias...")
-    subprocess.run([python_path, "-c", "import cv2, numpy, mediapipe, imageio, PIL, openal"], check=True)
+    subprocess.run([python_path, "-c", "import cv2, numpy, mediapipe, imageio, PIL, openal, screeninfo"], check=True)
     
     os.execv(python_path, [python_path, __file__])
 
@@ -52,16 +53,23 @@ debug_enabled = False
 rectangle_enabled = False
 
 # Configurar ventana en pantalla completa
-cv2.namedWindow(WINDOW_NAME, cv2.WND_PROP_FULLSCREEN)
-cv2.setWindowProperty(WINDOW_NAME,cv2.WND_PROP_FULLSCREEN,cv2.WINDOW_FULLSCREEN)
 
-# Obtener dimensiones de pantalla
-screen_width = cv2.getWindowImageRect(WINDOW_NAME)[2]
-screen_height = cv2.getWindowImageRect(WINDOW_NAME)[3]
+try:
+    primary_monitor = get_monitors()[0]
+    screen_width = primary_monitor.width
+    screen_height = primary_monitor.height
+except:
+    screen_width = 1920
+    screen_height = 1080
 
 # Validar dimensiones mínimas
 screen_width = max(screen_width, 1920)
 screen_height = max(screen_height, 1080)
+
+cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+cv2.resizeWindow(WINDOW_NAME, screen_width, screen_height)
+cv2.moveWindow(WINDOW_NAME, 0, 0)
 
 # Estados del menú
 MAIN_MENU = 0
@@ -78,7 +86,7 @@ button_layout = {
         'pong2': (0.25, 0.2, 0.75, 0.3),
         'retro': (0.25, 0.35, 0.75, 0.45),
         'debug': (0.25, 0.5, 0.75, 0.6),
-        'rectangle': (0.25, 0.65, 0.75, 0.75),
+        'rectangles': (0.25, 0.65, 0.75, 0.75),
         'back': (0.25, 0.8, 0.75, 0.9)
     }
 }
@@ -125,7 +133,7 @@ def draw_button(frame, text, position, checked=False):
     
     if checked:
         cv2.putText(frame, "✓", (x2 - 50, y1 + 50), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0, 255), thickness)
+                   cv2.FONT_HERSHEY_DUPLEX, 1.5, (0, 255, 0, 255), thickness)
     
     (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, font_scale, thickness)
     tx = x1 + ((x2 - x1) - tw) // 2
@@ -139,9 +147,9 @@ def draw_main_menu(frame):
     title_scale = max(0.8, screen_width / 1600)
     title_thickness = max(1, int(screen_width / 800))
     
-    cv2.putText(frame, "PONG ARCADE", 
+    cv2.putText(frame, "PONG AR", 
                 (int(screen_width*0.15), int(screen_height*0.1)),
-                cv2.FONT_HERSHEY_SCRIPT_COMPLEX, title_scale, (255, 255, 0, 255), 
+                cv2.FONT_HERSHEY_DUPLEX, title_scale, (255, 255, 0, 255), 
                 title_thickness)
     
     for text, key in [("Jugar", 'play'), ("Ajustes", 'settings'), ("Salir", 'exit')]:
@@ -149,13 +157,6 @@ def draw_main_menu(frame):
 
 def draw_settings_menu(frame):
     title_scale = max(0.6, screen_width / 1600)
-    cv2.putText(frame, "Selecciona version:", 
-                (int(screen_width*0.1), int(screen_height*0.1)), 
-                cv2.FONT_HERSHEY_SIMPLEX, title_scale, (0, 200, 200, 255), 2)
-    
-    cv2.putText(frame, f"Version actual: {selected_version}",
-                (int(screen_width*0.1), int(screen_height*0.15)), 
-                cv2.FONT_HERSHEY_SIMPLEX, title_scale*0.8, (200, 200, 0, 255), 2)
     
     draw_button(frame, "Pong 2", get_button_coords(button_layout, 'settings', 'pong2'), 
                checked=(selected_version == "Pong 2"))
@@ -163,7 +164,7 @@ def draw_settings_menu(frame):
                checked=(selected_version == "retro"))
     draw_button(frame, "Modo Debug", get_button_coords(button_layout, 'settings', 'debug'), 
                checked=debug_enabled)
-    draw_button(frame, "Modo Rectangulo", get_button_coords(button_layout, 'settings', 'rectangle'), 
+    draw_button(frame, "Modo Rectangulo", get_button_coords(button_layout, 'settings', 'rectangles'), 
                checked=rectangle_enabled)
     draw_button(frame, "Volver", get_button_coords(button_layout, 'settings', 'back'))
 
@@ -182,8 +183,8 @@ def mouse_callback(event, x, y, flags, param):
                             venv_python = os.path.join(os.path.dirname(__file__), "pong_venv", "bin", "python")
                             script = PONG2 if selected_version == "Pong 2" else PONGRETRO
                             args = [venv_python, script]
-                            if debug_enabled: args.append("--debug")
-                            if rectangle_enabled: args.append("--rectangle")
+                            if debug_enabled: args.append("debug")
+                            if rectangle_enabled: args.append("rectangles")
                             subprocess.Popen(args)
                             cv2.destroyAllWindows()
                         elif button_name == 'settings':
@@ -197,7 +198,7 @@ def mouse_callback(event, x, y, flags, param):
                             selected_version = "retro"
                         elif button_name == 'debug':
                             debug_enabled = not debug_enabled
-                        elif button_name == 'rectangle':
+                        elif button_name == 'rectangles':
                             rectangle_enabled = not rectangle_enabled
                         elif button_name == 'back':
                             current_menu = MAIN_MENU
