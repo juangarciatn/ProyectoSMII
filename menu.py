@@ -3,9 +3,7 @@ import sys
 import subprocess
 import os
 import venv
-import cv2
-import numpy as np
-from PIL import Image, ImageSequence
+
 
 REQUIRED_PACKAGES = {
     "cv2": "opencv-python==4.9.0.80",
@@ -13,7 +11,7 @@ REQUIRED_PACKAGES = {
     "mediapipe": "mediapipe==0.10.21",
     "imageio": "imageio==2.34.0",
     "Pillow": "Pillow==10.3.0",
-    "pygame": "pygame==2.5.2"
+    "PyOpenAL": "PyOpenAL==0.7.11a1"
 }
 
 def install_dependencies():
@@ -31,14 +29,13 @@ def install_dependencies():
             check=True,
             stdout=subprocess.DEVNULL
         )
-    
     print("Verificando dependencias...")
-    subprocess.run([python_path, "-c", "import cv2, numpy, mediapipe, pygame, imageio, PIL"], check=True)
+    subprocess.run([python_path, "-c", "import cv2, numpy, mediapipe, imageio, PIL, openal"], check=True)
     
     os.execv(python_path, [python_path, __file__])
 
 try:
-    import cv2, numpy as np, mediapipe, pygame
+    import cv2, numpy as np, mediapipe
     from PIL import Image, ImageSequence
 except ImportError:
     install_dependencies()

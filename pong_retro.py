@@ -1,268 +1,198 @@
 import cv2
 import mediapipe as mp
 import numpy as np
-import pygame
 import os
 import time
+import wave
+from openal import alc, al
+from ctypes import c_uint, c_void_p, byref
 
-# Inicializar pygame para sonidos
-pygame.mixer.init()
+# Configuración inicial de OpenAL
+device = alc.alcOpenDevice(None)
+context = alc.alcCreateContext(device, None)
+alc.alcMakeContextCurrent(context)
 
-def load_sound(filename):
-    return pygame.mixer.Sound(filename) if os.path.exists(filename) else None
-
-pong_sound = load_sound("pong.mpeg")
-win_sound = load_sound("win.mp3")
-countdown_sound = load_sound("countdown.mp3")
-
-# Configuarición del tiempo de espera
-COUNT_DOWN = 3
-
-# Configuración de la posición en el eje coordinal
+# Configuraciones del juego
+WIDTH, HEIGHT = 640, 480
+RECTANGULO_WIDTH, RECTANGULO_HEIGHT = 30, 90
 POS_HORIZONTAL_IZQUIERDA = 30
 POS_HORIZONTAL_DERECHA = 610
-
-# Configuración de los rectángulos
-RECTANGULO_WIDTH = 30
-RECTANGULO_HEIGHT = 90
-
-# Configuración de la ventana
-WIDTH = 640
-HEIGHT = 480
-
-# Tamaño de la bola
 BALL_SIZE = 10
+COUNT_DOWN = 3
 
-# Velocidad de la bola
-ballSpeedX = 5
-ballSpeedY = 5
-
-# Posición inicial de la bola
+# Variables del juego
 ballPosition = [WIDTH // 2, HEIGHT // 2]
-
-# Puntuación
-left_score = 0
-right_score = 0
-last_touched = None  # 1: izquierda, 2: derecha
+ballSpeedX, ballSpeedY = 5, 5
+left_score, right_score = 0, 0
+last_touched = None
+left_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
+right_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
 
 # Inicializar MediaPipe Hands
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3)
 mp_drawing = mp.solutions.drawing_utils
 
+def load_sound(filename):
+    if not os.path.exists(filename):
+        return None
+    
+    with wave.open(filename, 'rb') as wav_file:
+        channels = wav_file.getnchannels()
+        sample_width = wav_file.getsampwidth()  # Obtener profundidad de bits (1=8bits, 2=16bits)
+        sample_rate = wav_file.getframerate()
+        data = wav_file.readframes(wav_file.getnframes())
+    
+    buffer_id = c_uint(0)
+    al.alGenBuffers(1, byref(buffer_id))
+    
+    # Determinar formato según canales y profundidad
+    if sample_width == 1:
+        format = al.AL_FORMAT_STEREO8 if channels == 2 else al.AL_FORMAT_MONO8
+    else:  # 16 bits (sample_width == 2)
+        format = al.AL_FORMAT_STEREO16 if channels == 2 else al.AL_FORMAT_MONO16
+    
+    al.alBufferData(buffer_id.value, format, data, len(data), sample_rate)
+    
+    return buffer_id
+
+def play_sound(buffer_id, pan=0.0):
+    if not buffer_id:
+        return
+    
+    source_id = c_uint(0)
+    al.alGenSources(1, byref(source_id))
+    al.alSourcei(source_id, al.AL_BUFFER, buffer_id.value)
+    al.alSource3f(source_id, al.AL_POSITION, pan, 0, 0)
+    al.alSourcePlay(source_id)
+
+# Cargar sonidos
+pong_sound = load_sound("pong.wav")
+win_sound = load_sound("win.wav")
+
 def get_hand_rect(hand_landmarks):
     x_coords = [lm.x * WIDTH for lm in hand_landmarks.landmark]
     y_coords = [lm.y * HEIGHT for lm in hand_landmarks.landmark]
-    min_x, max_x = int(min(x_coords)), int(max(x_coords))
-    min_y, max_y = int(min(y_coords)), int(max(y_coords))
-    return (min_x, min_y), (max_x, max_y)
-
-# Variables globales para la posición de los rectángulos
-left_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
-right_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
+    return (int(min(x_coords)), int(min(y_coords))), (int(max(x_coords)), int(max(y_coords)))
 
 def process_hands(results):
     global left_paddle_y, right_paddle_y
     
+    if not results.multi_hand_landmarks:
+        return []
+
+    hands_sorted = sorted(
+        zip(results.multi_hand_landmarks, results.multi_handedness),
+        key=lambda h: h[0].landmark[mp_hands.HandLandmark.WRIST].x
+    )
+
     hand_data = []
-
-    if results.multi_hand_landmarks:
-        hands_sorted = sorted(
-            zip(results.multi_hand_landmarks, results.multi_handedness),
-            key=lambda h: h[0].landmark[mp_hands.HandLandmark.WRIST].x
-        )
-
-        for idx, (landmarks, handedness) in enumerate(hands_sorted, 1):
-            label = idx  # 1: izquierda, 2: derecha
-            rect = get_hand_rect(landmarks)
-            hand_data.append((label, rect))
-
-            # Actualizar la posición del rectángulo
-            center_y = (rect[0][1] + rect[1][1]) // 2
-            if label == 1:  # Mano izquierda
-                left_paddle_y = max(0, min(HEIGHT - RECTANGULO_HEIGHT, center_y - RECTANGULO_HEIGHT // 2))
-            elif label == 2:  # Mano derecha
-                right_paddle_y = max(0, min(HEIGHT - RECTANGULO_HEIGHT, center_y - RECTANGULO_HEIGHT // 2))
+    for idx, (landmarks, handedness) in enumerate(hands_sorted[:2], 1):
+        rect = get_hand_rect(landmarks)
+        center_y = (rect[0][1] + rect[1][1]) // 2
+        
+        if idx == 1:
+            left_paddle_y = max(0, min(HEIGHT - RECTANGULO_HEIGHT, center_y - RECTANGULO_HEIGHT // 2))
+        else:
+            right_paddle_y = max(0, min(HEIGHT - RECTANGULO_HEIGHT, center_y - RECTANGULO_HEIGHT // 2))
+        
+        hand_data.append((idx, rect))
     
     return hand_data
 
-def draw_ball(frame):
-    cv2.circle(frame, tuple(ballPosition), BALL_SIZE, (255, 255, 255), -1)
-
-def draw_middle_line(frame):
-    for y in range(0, HEIGHT, 20):
-        if (y // 10) % 2 == 0:
-            cv2.line(frame, (WIDTH // 2, y), (WIDTH // 2, y + 10), (255, 255, 255), 2)
-
-def draw_paddles(frame):
-    cv2.rectangle(frame, (POS_HORIZONTAL_IZQUIERDA - RECTANGULO_WIDTH // 2, left_paddle_y),
-                  (POS_HORIZONTAL_IZQUIERDA + RECTANGULO_WIDTH // 2, left_paddle_y + RECTANGULO_HEIGHT),
-                  (255, 255, 255), -1)
-
-    cv2.rectangle(frame, (POS_HORIZONTAL_DERECHA - RECTANGULO_WIDTH // 2, right_paddle_y),
-                  (POS_HORIZONTAL_DERECHA + RECTANGULO_WIDTH // 2, right_paddle_y + RECTANGULO_HEIGHT),
-                  (255, 255, 255), -1)
-
-def draw_score(frame):
-    cv2.putText(frame, f"Left: {left_score}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-    cv2.putText(frame, f"Right: {right_score}", (WIDTH - 200, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-def draw_shadow(frame):
-    # Crear una máscara negra semitransparente (canales BGR con alpha)
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
-    
-    # Aplicar la máscara sobre el frame original con transparencia
-    alpha = 0.7  # Factor de transparencia (0 = totalmente transparente, 1 = totalmente opaco)
-    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-
-def draw_stop(frame, hand_data):
-    global ballSpeedX, ballSpeedY
-    # Variable estática para guardar el estado anterior
-    if not hasattr(draw_stop, "prev_players"):
-        draw_stop.prev_players = 0
-        draw_stop.countdown_active = False
-    
-    # Contar jugadores detectados
-    num_players = len(hand_data)
-
-    # Usamos un bucle while para gestionar el estado del juego
-    while num_players < 2:  # Mientras no haya 2 jugadores
-        # Aplicar sombra semi-transparente (solo una vez)
-        if not draw_stop.countdown_active:
-            draw_shadow(frame)
-    
-        # Detener el movimiento de la bola
-        ballSpeedX = 0
-        ballSpeedY = 0
-    
-        # Mostrar mensaje central con el número de jugadores
-        message = f"Jugadores detectados: {num_players}/2"
-        text_size = cv2.getTextSize(message, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
-        text_x = (WIDTH - text_size[0]) // 2
-        text_y = (HEIGHT + text_size[1]) // 2
-    
-        cv2.putText(frame, message, (text_x, text_y), 
-               cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        
-        # Guardar el estado actual
-        draw_stop.prev_players = num_players
-        draw_stop.countdown_active = False
-        break
-
-    else:  # Este else corresponde al while (se ejecuta si no se entró en el while)
-        # Si acabamos de salir del estado de espera (antes <2, ahora 2)
-        if draw_stop.prev_players < 2 and num_players == 2:
-            draw_stop.countdown_active = True
-            
-            # Guardar una copia del frame original sin sombra
-            original_frame = frame.copy()
-            
-            # Mostrar cuenta atrás
-            for i in range(COUNT_DOWN, 0, -1):
-                # Restaurar el frame original (sin sombra acumulada)
-                frame[:] = original_frame[:]
-                
-                # Aplicar sombra solo una vez
-                overlay = frame.copy()
-                cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
-                alpha = 0.7
-                cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-                
-                # Mostrar número de cuenta atrás
-                count_text = str(i)
-                text_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 3, 5)[0]
-                text_x = (WIDTH - text_size[0]) // 2
-                text_y = (HEIGHT + text_size[1]) // 2
-                
-                cv2.putText(frame, count_text, (text_x, text_y), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 255, 255), 5)
-                
-                cv2.imshow("Pong AR - Turn-Based", frame)
-                if countdown_sound:
-                    countdown_sound.play()
-                cv2.waitKey(1000)  # Esperar 1 segundo
-            
-            # Después de la cuenta atrás, reanudar el juego
-            draw_stop.countdown_active = False
-            ballSpeedX = 5 if last_touched == 2 else -5
-            ballSpeedY = 5
-        
-        # Guardar el estado actual
-        draw_stop.prev_players = num_players
-
-def update_ball_position(hand_data):
+def update_ball_position():
     global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score, last_touched
-
-    next_x = ballPosition[0] + ballSpeedX
-    next_y = ballPosition[1] + ballSpeedY
-
-    # Rebotar en bordes superior/inferior
-    if next_y <= 0 or next_y >= HEIGHT:
+    
+    ballPosition[0] += ballSpeedX
+    ballPosition[1] += ballSpeedY
+    
+    # Rebote en bordes superior e inferior
+    if ballPosition[1] <= 0 or ballPosition[1] >= HEIGHT:
         ballSpeedY = -ballSpeedY
-
-    # Detectar colisión con los rectángulos
-    if (POS_HORIZONTAL_IZQUIERDA - RECTANGULO_WIDTH // 2 <= next_x <= POS_HORIZONTAL_IZQUIERDA + RECTANGULO_WIDTH // 2 and 
-        left_paddle_y <= next_y <= left_paddle_y + RECTANGULO_HEIGHT):
+    
+    # Colisión con paletas
+    if (POS_HORIZONTAL_IZQUIERDA - 15 <= ballPosition[0] <= POS_HORIZONTAL_IZQUIERDA + 15 and
+        left_paddle_y <= ballPosition[1] <= left_paddle_y + RECTANGULO_HEIGHT):
         if last_touched != 1:
-            ballSpeedX = -ballSpeedX
+            ballSpeedX = abs(ballSpeedX)
             last_touched = 1
-            if pong_sound:
-                pong_sound.play()
-
-    elif (POS_HORIZONTAL_DERECHA - RECTANGULO_WIDTH // 2 <= next_x <= POS_HORIZONTAL_DERECHA + RECTANGULO_WIDTH // 2 and 
-          right_paddle_y <= next_y <= right_paddle_y + RECTANGULO_HEIGHT):
+            play_sound(pong_sound, pan=-3.0)
+    
+    elif (POS_HORIZONTAL_DERECHA - 15 <= ballPosition[0] <= POS_HORIZONTAL_DERECHA + 15 and
+          right_paddle_y <= ballPosition[1] <= right_paddle_y + RECTANGULO_HEIGHT):
         if last_touched != 2:
-            ballSpeedX = -ballSpeedX
+            ballSpeedX = -abs(ballSpeedX)
             last_touched = 2
-            if pong_sound:
-                pong_sound.play()
-
-    # Actualizar la posición de la bola
-    ballPosition[0] = next_x
-    ballPosition[1] = next_y
-
-    # Puntos cuando la bola cruza los límites
+            play_sound(pong_sound, pan=3.0)
+    
+    # Puntos
     if ballPosition[0] <= 0:
         right_score += 1
-        last_touched = None
-        if win_sound:
-            win_sound.play()
-        ballPosition = [WIDTH // 2, HEIGHT // 2]
+        play_sound(win_sound, pan=5.0)
+        reset_ball()
     elif ballPosition[0] >= WIDTH:
         left_score += 1
-        last_touched = None
-        if win_sound:
-            win_sound.play()
-        ballPosition = [WIDTH // 2, HEIGHT // 2]
+        play_sound(win_sound, pan=-5.0)
+        reset_ball()
+
+def reset_ball():
+    global ballPosition, last_touched
+    ballPosition = [WIDTH // 2, HEIGHT // 2]
+    last_touched = None
+
+def draw_interface(frame):
+    # Línea central
+    for y in range(0, HEIGHT, 20):
+        if (y // 10) % 2 == 0:
+            cv2.line(frame, (WIDTH//2, y), (WIDTH//2, y+10), (255,255,255), 2)
+    
+    # Paletas
+    cv2.rectangle(frame, (POS_HORIZONTAL_IZQUIERDA-15, left_paddle_y),
+                 (POS_HORIZONTAL_IZQUIERDA+15, left_paddle_y+RECTANGULO_HEIGHT),
+                 (255,255,255), -1)
+    cv2.rectangle(frame, (POS_HORIZONTAL_DERECHA-15, right_paddle_y),
+                 (POS_HORIZONTAL_DERECHA+15, right_paddle_y+RECTANGULO_HEIGHT),
+                 (255,255,255), -1)
+    
+    # Bola
+    cv2.circle(frame, tuple(ballPosition), BALL_SIZE, (255,255,255), -1)
+    
+    # Marcador
+    cv2.putText(frame, f"Left: {left_score}", (50, 50), 
+               cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+    cv2.putText(frame, f"Right: {right_score}", (WIDTH-200, 50), 
+               cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+
+def handle_countdown(frame, hand_data):
+    global ballSpeedX, ballSpeedY
+    
+    if len(hand_data) < 2:
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0,0), (WIDTH, HEIGHT), (0,0,0), -1)
+        cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
+        
+        text = f"Jugadores detectados: {len(hand_data)}/2"
+        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        cv2.putText(frame, text, ((WIDTH-text_size[0])//2, (HEIGHT+text_size[1])//2),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+        
+        ballSpeedX = ballSpeedY = 0
+        return False
+    else:
+        if ballSpeedX == 0 and ballSpeedY == 0:
+            for i in range(COUNT_DOWN, 0, -1):
+                temp_frame = frame.copy()
+                overlay = temp_frame.copy()
+                cv2.rectangle(overlay, (0,0), (WIDTH, HEIGHT), (0,0,0), -1)
+                cv2.addWeighted(overlay, 0.7, temp_frame, 0.3, 0, temp_frame)
+                
+                cv2.putText(temp_frame, str(i), (WIDTH//2-30, HEIGHT//2+30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 3, (255,255,255), 5)
+                cv2.imshow("Pong AR", temp_frame)
+                cv2.waitKey(1000)
+            
+            ballSpeedX = 5 if last_touched == 2 else -5
+            ballSpeedY = 5
+        return True
 
 cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
-
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    frame = cv2.flip(frame, 1)
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    
-    results = hands.process(rgb_frame)
-    hand_data = process_hands(results)
-    
-    draw_shadow(frame)
-    draw_ball(frame)
-    draw_middle_line(frame)
-    draw_score(frame)
-    draw_paddles(frame)
-    update_ball_position(hand_data)
-    draw_stop(frame, hand_data)
-    
-    cv2.imshow("Pong AR - Turn-Based", frame)
-    
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
