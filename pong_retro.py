@@ -7,24 +7,30 @@ import time
 import subprocess
 import random
 
-# Inicializar pygame para sonidos
+# Inicializar pygame
 pygame.mixer.init(frequency=44100, size=-16, channels=2)
+pygame.init()
 
 # Constantes del juego
 COUNT_DOWN_LEFT_HAND = 2
 COUNT_DOWN_RIGHT_HAND = 2
-POS_HORIZONTAL_IZQUIERDA = 30
-POS_HORIZONTAL_DERECHA = 610
 RECTANGULO_WIDTH = 30
 RECTANGULO_HEIGHT = 90
-WIDTH = 640
-HEIGHT = 480
 BALL_SIZE = 10
 MIN_SPEED = 5
 MAX_SPEED = 30
 
+# Variables de pantalla
+WIDTH = 1280
+HEIGHT = 720
+POS_HORIZONTAL_IZQUIERDA = 0
+POS_HORIZONTAL_DERECHA = 0
+
+# Estado del juego
+paused = False
+
 def scape():
-    print("Saliendo del pong retro...")
+    print("Leaving pong_retro.py...")
     cv2.destroyAllWindows()
     subprocess.Popen(["python", "menu.py"])
 
@@ -50,6 +56,23 @@ def initialize_game():
     global ballPosition, ballSpeedX, ballSpeedY
     global left_score, right_score, last_touched
     global hands, mp_hands, mp_drawing
+    global WIDTH, HEIGHT, POS_HORIZONTAL_IZQUIERDA, POS_HORIZONTAL_DERECHA
+    global RECTANGULO_HEIGHT
+    
+    try:
+        screen_info = pygame.display.Info()
+        WIDTH = screen_info.current_w
+        HEIGHT = screen_info.current_h
+    except:
+        WIDTH = 1280
+        HEIGHT = 720
+    
+    WIDTH = max(WIDTH, 800)
+    HEIGHT = max(HEIGHT, 600)
+    
+    POS_HORIZONTAL_IZQUIERDA = int(WIDTH * 0.05)
+    POS_HORIZONTAL_DERECHA = int(WIDTH * 0.95)
+    RECTANGULO_HEIGHT = max(60, int(HEIGHT * 0.15))
     
     pong_sound = load_sound("pong.mpeg")
     win_sound = load_sound("win.mp3")
@@ -64,7 +87,11 @@ def initialize_game():
     right_score = 0
     
     mp_hands = mp.solutions.hands
-    hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.3)
+    hands = mp_hands.Hands(
+        max_num_hands=2,
+        min_detection_confidence=0.7,  # Aumentada para mayor precisión
+        min_tracking_confidence=0.7
+    )
     mp_drawing = mp.solutions.drawing_utils
 
 def get_hand_rect(hand_landmarks):
@@ -75,7 +102,8 @@ def get_hand_rect(hand_landmarks):
     return (min_x, min_y), (max_x, max_y)
 
 def process_hands(results):
-    global left_paddle_y, right_paddle_y
+    global left_paddle_y, right_paddle_y, paused
+    global COUNT_DOWN_LEFT_HAND, COUNT_DOWN_RIGHT_HAND
     
     hand_data = []
     left_hand_detected = False
@@ -83,7 +111,7 @@ def process_hands(results):
 
     if results.multi_hand_landmarks:
         for landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
-            hand_label = handedness.classification[0].label  # 'Left' o 'Right'
+            hand_label = handedness.classification[0].label
             rect = get_hand_rect(landmarks)
             hand_data.append((hand_label, rect))
 
@@ -95,95 +123,144 @@ def process_hands(results):
                 right_hand_detected = True
                 right_paddle_y = max(0, min(HEIGHT - RECTANGULO_HEIGHT, center_y - RECTANGULO_HEIGHT // 2))
     
+    # Actualizar contadores de detección con umbral más sensible
+    if not left_hand_detected:
+        COUNT_DOWN_LEFT_HAND = max(0, COUNT_DOWN_LEFT_HAND - 1/20)  # Decremento más rápido (1 segundo para llegar a 0)
+    else:
+        COUNT_DOWN_LEFT_HAND = min(2, COUNT_DOWN_LEFT_HAND + 1/10)  # Recuperación más lenta
+    
+    if not right_hand_detected:
+        COUNT_DOWN_RIGHT_HAND = max(0, COUNT_DOWN_RIGHT_HAND - 1/20)
+    else:
+        COUNT_DOWN_RIGHT_HAND = min(2, COUNT_DOWN_RIGHT_HAND + 1/10)
+    
+    # Determinar estado de pausa
+    paused = COUNT_DOWN_LEFT_HAND <= 0 or COUNT_DOWN_RIGHT_HAND <= 0
+    
+    # Debug: Mostrar valores de los contadores
+    print(f"Left Hand Timer: {COUNT_DOWN_LEFT_HAND:.1f} | Right Hand Timer: {COUNT_DOWN_RIGHT_HAND:.1f} | Paused: {paused}")
+    
     return hand_data, left_hand_detected, right_hand_detected
 
 def draw_ball(frame):
     try:
         x, y = int(ballPosition[0]), int(ballPosition[1])
-        cv2.circle(frame, (x, y), BALL_SIZE, (255, 255, 255), -1)
+        ball_size = max(5, int(min(WIDTH, HEIGHT) * 0.015))
+        cv2.circle(frame, (x, y), ball_size, (255, 255, 255), -1)
     except Exception as e:
-        print(f"Error dibujando bola: {e}")
+        print(f"Error drawing ball: {e}")
 
 def draw_middle_line(frame):
-    for y in range(0, HEIGHT, 20):
-        if (y // 10) % 2 == 0:
-            cv2.line(frame, (WIDTH // 2, y), (WIDTH // 2, y + 10), (255, 255, 255), 2)
+    try:
+        line_thickness = max(1, int(min(WIDTH, HEIGHT) * 0.003))
+        dash_length = max(5, int(HEIGHT * 0.03))
+        gap_length = max(3, int(HEIGHT * 0.02))
+        
+        step = dash_length + gap_length
+        if step <= 0:
+            step = 10
+            
+        for y in range(0, HEIGHT, step):
+            cv2.line(frame, (WIDTH // 2, y), (WIDTH // 2, y + dash_length), 
+                    (255, 255, 255), line_thickness)
+    except Exception as e:
+        print(f"Error drawing middle line: {e}")
 
 def draw_paddles(frame):
-    cv2.rectangle(frame, (POS_HORIZONTAL_IZQUIERDA - RECTANGULO_WIDTH // 2, left_paddle_y),
-                  (POS_HORIZONTAL_IZQUIERDA + RECTANGULO_WIDTH // 2, left_paddle_y + RECTANGULO_HEIGHT),
-                  (255, 255, 255), -1)
-
-    cv2.rectangle(frame, (POS_HORIZONTAL_DERECHA - RECTANGULO_WIDTH // 2, right_paddle_y),
-                  (POS_HORIZONTAL_DERECHA + RECTANGULO_WIDTH // 2, right_paddle_y + RECTANGULO_HEIGHT),
-                  (255, 255, 255), -1)
+    try:
+        paddle_width = max(10, int(WIDTH * 0.015))
+        
+        cv2.rectangle(frame, 
+                     (POS_HORIZONTAL_IZQUIERDA - paddle_width // 2, left_paddle_y),
+                     (POS_HORIZONTAL_IZQUIERDA + paddle_width // 2, left_paddle_y + RECTANGULO_HEIGHT),
+                     (255, 255, 255), -1)
+        
+        cv2.rectangle(frame, 
+                     (POS_HORIZONTAL_DERECHA - paddle_width // 2, right_paddle_y),
+                     (POS_HORIZONTAL_DERECHA + paddle_width // 2, right_paddle_y + RECTANGULO_HEIGHT),
+                     (255, 255, 255), -1)
+    except Exception as e:
+        print(f"Error drawing palettes: {e}")
 
 def draw_score(frame):
-    cv2.putText(frame, f"Left: {left_score}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-    cv2.putText(frame, f"Right: {right_score}", (WIDTH - 200, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    try:
+        font_scale = max(0.5, min(WIDTH, HEIGHT) / 1000)
+        thickness = max(1, int(font_scale * 2))
+        
+        # Dibujar marcador izquierdo
+        left_text = f"Left: {left_score}"
+        left_size = cv2.getTextSize(left_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
+        left_pos = (int(WIDTH * 0.1), int(HEIGHT * 0.1))
+        cv2.putText(frame, left_text, left_pos, 
+                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+        
+        # Mensaje de mano izquierda no detectada (siempre visible si hay problema)
+        if COUNT_DOWN_LEFT_HAND < 2:  # Eliminamos la condición "and not paused"
+            warning_text = "Left hand not detected!"
+            warning_size = cv2.getTextSize(warning_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, thickness)[0]
+            cv2.putText(frame, warning_text,
+                       (left_pos[0], left_pos[1] + left_size[1] + 15),
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, (0, 0, 255), thickness)
+        
+        # Dibujar marcador derecho
+        right_text = f"Right: {right_score}"
+        right_size = cv2.getTextSize(right_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
+        right_pos = (int(WIDTH * 0.7), int(HEIGHT * 0.1))
+        cv2.putText(frame, right_text, right_pos, 
+                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+        
+        # Mensaje de mano derecha no detectada (siempre visible si hay problema)
+        if COUNT_DOWN_RIGHT_HAND < 2:  # Eliminamos la condición "and not paused"
+            warning_text = "Right hand not detected!"
+            warning_size = cv2.getTextSize(warning_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, thickness)[0]
+            cv2.putText(frame, warning_text,
+                       (right_pos[0], right_pos[1] + right_size[1] + 15),
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, (0, 0, 255), thickness)
+            
+    except Exception as e:
+        print(f"Error drawing marker: {e}")
 
 def draw_shadow(frame):
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
-    alpha = 0.7
-    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-
-def draw_stop(frame, hand_data, left_hand_detected, right_hand_detected):
-    global COUNT_DOWN_LEFT_HAND, COUNT_DOWN_RIGHT_HAND
-    
-    # Contador para mano izquierda
-    if not left_hand_detected:
-        text = "Left hand not detected!"
-        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
-        text_x = (WIDTH // 4) - (text_size[0] // 2)  # Centrado en el lado izquierdo
-        text_y = HEIGHT // 4  # Más arriba (1/4 de la pantalla)
-        cv2.putText(frame, text, 
-                   (text_x, text_y), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        COUNT_DOWN_LEFT_HAND -= 1/30
-    else:
-        COUNT_DOWN_LEFT_HAND = 2
-    
-    # Contador para mano derecha
-    if not right_hand_detected:
-        text = "Right hand not detected!"
-        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
-        text_x = (3 * WIDTH // 4) - (text_size[0] // 2)  # Centrado en el lado derecho
-        text_y = HEIGHT // 4  # Más arriba (1/4 de la pantalla)
-        cv2.putText(frame, text, 
-                   (text_x, text_y), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        COUNT_DOWN_RIGHT_HAND -= 1/30
-    else:
-        COUNT_DOWN_RIGHT_HAND = 2
-    
-    # Mensaje de pausa
-    if COUNT_DOWN_LEFT_HAND <= 0 or COUNT_DOWN_RIGHT_HAND <= 0:
+    try:
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
-        alpha = 0.5
+        alpha = 0.7
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-        
-        pause_text = "JUEGO EN PAUSA"
-        pause_size = cv2.getTextSize(pause_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 3)[0]
-        cv2.putText(frame, pause_text, 
-                   (WIDTH // 2 - pause_size[0] // 2, HEIGHT // 2 - 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
-        
-        continue_text = "Muestre ambas manos para continuar"
-        continue_size = cv2.getTextSize(continue_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
-        cv2.putText(frame, continue_text, 
-                   (WIDTH // 2 - continue_size[0] // 2, HEIGHT // 2 + 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        
-        return True
-    
-    return False
+    except Exception as e:
+        print(f"Error drawing shadow: {e}")
+
+def draw_pause_message(frame):
+    try:
+        # Solo dibujar el overlay oscuro si está en pausa
+        if paused:
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
+            alpha = 0.3  # Reducimos la opacidad para que se vean mejor los otros mensajes
+            cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+            
+            # Mensaje principal de pausa
+            font_scale = max(0.8, min(WIDTH, HEIGHT) / 800)
+            thickness = max(2, int(font_scale * 2))
+            
+            pause_text = "GAME PAUSED"
+            text_size = cv2.getTextSize(pause_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
+            cv2.putText(frame, pause_text,
+                       (WIDTH // 2 - text_size[0] // 2, HEIGHT // 2 - 50),
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), thickness)
+            
+            continue_text = "Show both hands to continue"
+            continue_size = cv2.getTextSize(continue_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale-0.2, thickness-1)[0]
+            cv2.putText(frame, continue_text,
+                       (WIDTH // 2 - continue_size[0] // 2, HEIGHT // 2 + 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale-0.2, (255, 255, 255), thickness-1)
+            
+    except Exception as e:
+        print(f"Error drawing pause message: {e}")
 
 def speed_up():
     global ballSpeedX, ballSpeedY
     
-    SPEED_INCREASE_FACTOR = 1.1
+    SPEED_INCREASE_FACTOR = 1.3
     
     ballSpeedX = abs(ballSpeedX) * SPEED_INCREASE_FACTOR * (1 if ballSpeedX > 0 else -1)
     ballSpeedY = abs(ballSpeedY) * SPEED_INCREASE_FACTOR * (1 if ballSpeedY > 0 else -1)
@@ -196,93 +273,113 @@ def speed_up():
 
 def update_ball_position(hand_data):
     global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score, last_touched
-
-    next_x = ballPosition[0] + ballSpeedX
-    next_y = ballPosition[1] + ballSpeedY
-
-    if next_y <= 0 or next_y >= HEIGHT:
-        ballSpeedY = -ballSpeedY
-
-    if (POS_HORIZONTAL_IZQUIERDA - RECTANGULO_WIDTH//2 <= next_x <= POS_HORIZONTAL_IZQUIERDA + RECTANGULO_WIDTH//2 and 
-        left_paddle_y <= next_y <= left_paddle_y + RECTANGULO_HEIGHT):
-        if last_touched != 'Left':
-            ballSpeedX = -ballSpeedX
-            last_touched = 'Left'
-            speed_up()
-            if pong_sound:
-                channel = pygame.mixer.Channel(0)
-                channel.set_volume(1.0, 0.0)
-                channel.play(pong_sound)
-
-    elif (POS_HORIZONTAL_DERECHA - RECTANGULO_WIDTH//2 <= next_x <= POS_HORIZONTAL_DERECHA + RECTANGULO_WIDTH//2 and 
-          right_paddle_y <= next_y <= right_paddle_y + RECTANGULO_HEIGHT):
-        if last_touched != 'Right':
-            ballSpeedX = -ballSpeedX
-            last_touched = 'Right'
-            speed_up()
-            if pong_sound:
-                channel = pygame.mixer.Channel(1)
-                channel.set_volume(0.0, 1.0)
-                channel.play(pong_sound)
-
-    ballPosition[0] = next_x
-    ballPosition[1] = next_y
-
-    # Reinicio cuando la pelota sale por izquierda (punto para derecha)
-    if ballPosition[0] <= 0:
-        right_score += 1
-        reset_ball(direction=-1)  # Ahora va hacia el perdedor (izquierda)
-        if win_sound:
-            channel = pygame.mixer.Channel(2)
-            channel.set_volume(0.0, 1.0)
-            channel.play(win_sound)
     
-    # Reinicio cuando la pelota sale por derecha (punto para izquierda)
-    elif ballPosition[0] >= WIDTH:
-        left_score += 1
-        reset_ball(direction=1)  # Ahora va hacia el perdedor (derecha)
-        if win_sound:
-            channel = pygame.mixer.Channel(3)
-            channel.set_volume(1.0, 0.0)
-            channel.play(win_sound)
+    if paused:  # No actualizar posición si está en pausa
+        return
+
+    try:
+        next_x = ballPosition[0] + ballSpeedX
+        next_y = ballPosition[1] + ballSpeedY
+
+        if next_y <= 0 or next_y >= HEIGHT:
+            ballSpeedY = -ballSpeedY
+
+        paddle_width = max(10, int(WIDTH * 0.015))
+        
+        if (POS_HORIZONTAL_IZQUIERDA - paddle_width//2 <= next_x <= POS_HORIZONTAL_IZQUIERDA + paddle_width//2 and 
+            left_paddle_y <= next_y <= left_paddle_y + RECTANGULO_HEIGHT):
+            if last_touched != 'Left':
+                ballSpeedX = -ballSpeedX
+                last_touched = 'Left'
+                speed_up()
+                if pong_sound:
+                    channel = pygame.mixer.Channel(0)
+                    channel.set_volume(1.0, 0.0)
+                    channel.play(pong_sound)
+
+        elif (POS_HORIZONTAL_DERECHA - paddle_width//2 <= next_x <= POS_HORIZONTAL_DERECHA + paddle_width//2 and 
+              right_paddle_y <= next_y <= right_paddle_y + RECTANGULO_HEIGHT):
+            if last_touched != 'Right':
+                ballSpeedX = -ballSpeedX
+                last_touched = 'Right'
+                speed_up()
+                if pong_sound:
+                    channel = pygame.mixer.Channel(1)
+                    channel.set_volume(0.0, 1.0)
+                    channel.play(pong_sound)
+
+        ballPosition[0] = next_x
+        ballPosition[1] = next_y
+
+        if ballPosition[0] <= 0:
+            right_score += 1
+            reset_ball(direction=-1)
+            if win_sound:
+                channel = pygame.mixer.Channel(2)
+                channel.set_volume(0.0, 1.0)
+                channel.play(win_sound)
+        
+        elif ballPosition[0] >= WIDTH:
+            left_score += 1
+            reset_ball(direction=1)
+            if win_sound:
+                channel = pygame.mixer.Channel(3)
+                channel.set_volume(1.0, 0.0)
+                channel.play(win_sound)
+    except Exception as e:
+        print(f"Error updating ball position: {e}")
+        reset_ball(direction=1 if random.random() > 0.5 else -1)
 
 def main():
     initialize_game()
     
-    cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+    try:
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            raise Exception("The camera could not be opened")
+            
+        cv2.namedWindow("Pong AR - Turn-Based", cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty("Pong AR - Turn-Based", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
 
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                print("Error capturing frame")
+                break
 
-        frame = cv2.flip(frame, 1)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        results = hands.process(rgb_frame)
-        hand_data, left_detected, right_detected = process_hands(results)
-        
-        draw_shadow(frame)
-        draw_ball(frame)
-        draw_middle_line(frame)
-        draw_score(frame)
-        draw_paddles(frame)
-        
-        # Solo actualizar posición si no estamos en pausa
-        paused = draw_stop(frame, hand_data, left_detected, right_detected)
-        if not paused:
-            update_ball_position(hand_data)
-        
-        cv2.imshow("Pong AR - Turn-Based", frame)
-        
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            scape()
-            break
+            frame = cv2.flip(frame, 1)
+            frame = cv2.resize(frame, (WIDTH, HEIGHT))
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            results = hands.process(rgb_frame)
+            hand_data, left_detected, right_detected = process_hands(results)
+            
+            draw_shadow(frame)
+            draw_ball(frame)
+            draw_middle_line(frame)
+            draw_score(frame)
+            draw_paddles(frame)
+            
+            if paused:
+                draw_pause_message(frame)
+            else:
+                update_ball_position(hand_data)
+            
+            cv2.imshow("Pong AR - Turn-Based", frame)
+            
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                scape()
+                break
 
-    cap.release()
-    cv2.destroyAllWindows()
+    except Exception as e:
+        print(f"Bug in the game: {e}")
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+        pygame.quit()
 
 if __name__ == "__main__":
     main()
