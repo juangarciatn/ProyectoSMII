@@ -30,8 +30,9 @@ POS_HORIZONTAL_DERECHA = 0
 # Estado del juego
 paused = False
 
-# Variable para modo debug
+# Variables para modos
 DEBUG_MODE = False
+RECTANGLE_MODE = False
 
 def close():
     print("Closing game...")
@@ -68,10 +69,12 @@ def initialize_game():
     global left_score, right_score, last_touched
     global hands, mp_hands, mp_drawing
     global WIDTH, HEIGHT, POS_HORIZONTAL_IZQUIERDA, POS_HORIZONTAL_DERECHA
-    global RECTANGULO_HEIGHT, DEBUG_MODE
+    global RECTANGULO_HEIGHT, DEBUG_MODE, RECTANGLE_MODE
     
-    # Verificar si estamos en modo debug
-    DEBUG_MODE = len(sys.argv) > 1 and sys.argv[1].lower() == "debug"
+    # Verificar argumentos de línea de comandos
+    args = [arg.lower() for arg in sys.argv[1:]]
+    DEBUG_MODE = "debug" in args
+    RECTANGLE_MODE = "rectangle" in args
     
     try:
         screen_info = pygame.display.Info()
@@ -114,6 +117,29 @@ def get_hand_rect(hand_landmarks):
     min_x, max_x = int(min(x_coords)), int(max(x_coords))
     min_y, max_y = int(min(y_coords)), int(max(y_coords))
     return (min_x, min_y), (max_x, max_y)
+
+def draw_rectangle_hands(frame, hand_data):
+    if not RECTANGLE_MODE:
+        return
+    
+    try:
+        for hand_label, rect in hand_data:
+            color = (0, 255, 0)  # Verde
+            thickness = max(2, int(min(WIDTH, HEIGHT) * 0.003))
+            
+            # Dibujar rectángulo alrededor de la mano
+            cv2.rectangle(frame, rect[0], rect[1], color, thickness)
+            
+            # Dibujar etiqueta de la mano
+            font_scale = max(0.5, min(WIDTH, HEIGHT) / 1000)
+            thickness_text = max(1, int(font_scale * 2))
+            
+            label_text = f"{hand_label} Hand"
+            cv2.putText(frame, label_text,
+                       (rect[0][0], rect[0][1] - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness_text)
+    except Exception as e:
+        print(f"Error drawing hand rectangles: {e}")
 
 def process_hands(results):
     global left_paddle_y, right_paddle_y, paused
@@ -287,20 +313,21 @@ def draw_debug_info(frame):
             f"Right Hand Speed: {abs(ballSpeedX):.1f}",
             f"Left Hand Speed: {abs(ballSpeedX):.1f}",
             f"Ball Speed: ({abs(ballSpeedX):.1f}, {abs(ballSpeedY):.1f})",
-            f"Ball Position: ({ballPosition[0]:.1f}, {ballPosition[1]:.1f})"
+            f"Ball Position: ({ballPosition[0]:.1f}, {ballPosition[1]:.1f})",
+            f"Rectangle Mode: {'ON' if RECTANGLE_MODE else 'OFF'}"
         ]
         
         # Calcular el ancho máximo del texto
         text_width = max([cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0][0] for line in debug_info])
         
         # Fondo semitransparente para el texto de debug (esquina inferior izquierda)
-#        overlay = frame.copy()
-#        cv2.rectangle(overlay, 
-#                     (10, start_y - len(debug_info) * line_height - 10),
-#                     (20 + text_width, start_y + 10),
-#                     (0, 0, 0), -1)
-#        alpha = 0.5
-#        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+        overlay = frame.copy()
+        cv2.rectangle(overlay, 
+                     (10, start_y - len(debug_info) * line_height - 10),
+                     (20 + text_width, start_y + 10),
+                     (0, 0, 0), -1)
+        alpha = 0.5
+        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
         
         # Dibujar cada línea de información de debug
         for i, line in enumerate(debug_info):
@@ -417,6 +444,7 @@ def main():
             draw_middle_line(frame)
             draw_score(frame)
             draw_paddles(frame)
+            draw_rectangle_hands(frame, hand_data)
             draw_debug_info(frame)
             
             if paused:
