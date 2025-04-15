@@ -31,23 +31,45 @@ REQUIRED_PACKAGES = {
 
 def install_dependencies():
     venv_dir = os.path.join(os.path.dirname(__file__), "pong_venv")
-    python_path = os.path.join(venv_dir, "bin", "python")
+    
+    # Configuración correcta de rutas para Windows
+    if os.name == 'nt':
+        python_path = os.path.join(venv_dir, "Scripts", "python.exe")
+    else:
+        python_path = os.path.join(venv_dir, "bin", "python")
     
     if not os.path.exists(venv_dir):
         print("Creando entorno virtual...")
         venv.create(venv_dir, with_pip=True)
     
+    # Instalación con timeout extendido y manejo de errores
     for package in REQUIRED_PACKAGES.values():
         print(f"Instalando {package}...")
-        subprocess.run(
-            [python_path, "-m", "pip", "install", package],
-            check=True,
-            stdout=subprocess.DEVNULL
-        )
-    print("Verificando dependencias...")
-    subprocess.run([python_path, "-c", "import cv2, numpy, mediapipe, imageio, PIL, openal, screeninfo"], check=True)
+        try:
+            subprocess.run(
+                [python_path, "-m", "pip", "install", "--default-timeout=1000", package],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Error instalando {package}: {e}")
+            sys.exit(1)
     
-    os.execv(python_path, [python_path, __file__])
+    # Verificación final
+    print("Verificando dependencias...")
+    try:
+        subprocess.run(
+            [python_path, "-c", "import cv2, numpy, mediapipe, imageio, PIL, openal, screeninfo"],
+            check=True
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Error verificando dependencias: {e}")
+        sys.exit(1)
+    
+    # Reinicio limpio para Windows
+    print("Reiniciando aplicación...")
+    os.execl(python_path, python_path, '"' + __file__ + '"')
 
 try:
     import cv2
@@ -87,6 +109,9 @@ cv2.moveWindow(WINDOW_NAME, 0, 0)
 
 # --- Configuración de cámara ---
 cap = cv2.VideoCapture(0)
+if not cap.isOpened():
+    print("Error: Cámara no detectada")
+    sys.exit(1)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_RESOLUTION[0])
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_RESOLUTION[1])
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -212,14 +237,12 @@ def async_hand_detection():
             idx = mp_hands.HandLandmark.INDEX_FINGER_TIP
             thumb = mp_hands.HandLandmark.THUMB_TIP
             
-            # Modificación 1: Eliminar la inversión en el eje X
-            idx_x = hand.landmark[idx].x  # Eliminado 1.0 - 
+            idx_x = hand.landmark[idx].x
             idx_y = hand.landmark[idx].y
-            thumb_x = hand.landmark[thumb].x  # Eliminado 1.0 - 
+            thumb_x = hand.landmark[thumb].x
             
             cursor_pos = (int(idx_x * screen_width), int(idx_y * screen_height))
-            # Modificación 2: Aumentar sensibilidad del click
-            click_detected = np.hypot(idx_x - thumb_x, idx_y - hand.landmark[thumb].y) < 0.05  # 0.03 -> 0.05
+            click_detected = np.hypot(idx_x - thumb_x, idx_y - hand.landmark[thumb].y) < 0.05
 
 threading.Thread(target=async_hand_detection, daemon=True).start()
 
@@ -248,19 +271,21 @@ def handle_clicks():
         if x1 <= x <= x2 and y1 <= y <= y2:
             if current_menu == 0:
                 if button_name == 'play':
-                    venv_python = os.path.join(os.path.dirname(__file__), "pong_venv", "bin", "python")
+                    venv_dir = os.path.join(os.path.dirname(__file__), "pong_venv")
+                    if os.name == 'nt':
+                        python_path = os.path.join(venv_dir, "Scripts", "python.exe")
+                    else:
+                        python_path = os.path.join(venv_dir, "bin", "python")
                     script = PONG2 if selected_version == "Pong 2" else PONGRETRO
-                    args = [venv_python, script]
+                    args = [python_path, script]
                     if debug_enabled: args.append("debug")
                     if rectangle_enabled: args.append("rectangles")
                     
-                    # Liberar recursos antes de lanzar el juego
-                    cap.release()  # Liberar cámara
-                    cv2.destroyAllWindows()  # Cerrar ventanas
+                    cap.release()
+                    cv2.destroyAllWindows()
                     
-                    # Ejecutar el juego y salir del menú
-                    subprocess.Popen(args, close_fds=True)  # close_fds importante para Linux/macOS
-                    os._exit(0)  # Salida inmediata y limpia
+                    subprocess.Popen(args)
+                    os._exit(0)
                 elif button_name == 'settings':
                     current_menu = 1
             else:
@@ -279,22 +304,18 @@ def handle_clicks():
 
 # --- Bucle principal ---
 while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
-    # Actualizar fondo
     if gif_frames:
         bg_frame = gif_frames[current_gif_frame].copy()
         current_gif_frame = (current_gif_frame + 1) % len(gif_frames)
     else:
         bg_frame = np.zeros((screen_height, screen_width, 4), dtype=np.uint8)
     
-    # Dibujar menú
     current_menu_type = 'main' if current_menu == 0 else 'settings'
     cv2.addWeighted(bg_frame, 1.0, menu_cache[current_menu_type], 1.0, 0, bg_frame)
     
-    # Control de entrada
     current_click = mouse_click if use_mouse else click_detected
     current_cursor = cursor_pos if (use_mouse or cursor_pos) else None
     
-    # Dibujar cursor y depuración
     if current_cursor:
         color = (0, 255, 0) if use_mouse else (0, 255, 255)
         marker_size = 20 if use_mouse else 30
@@ -314,13 +335,11 @@ while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 y_offset += 30
     
-    # Manejar clics
     if current_click:
         handle_clicks()
         play_click_sound()
         mouse_click = False
     
-    # Control de teclado
     key = cv2.waitKey(max(1, frame_delay))
     if key == 27:
         break
