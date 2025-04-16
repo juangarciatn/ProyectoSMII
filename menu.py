@@ -4,6 +4,7 @@ import os
 import venv
 import threading
 import concurrent.futures
+import time
 
 # --- Variables globales ---
 PONG2 = "pong2.py"
@@ -16,7 +17,7 @@ FRAME_SKIP = 2
 selected_version = "Pong 2"
 debug_enabled = False
 rectangle_enabled = False
-use_mouse = False  # Modo ratón/hand tracking
+use_mouse = True  # Modo ratón/hand tracking inicializado por defecto
 
 REQUIRED_PACKAGES = {
     "cv2": "opencv-python==4.9.0.80",
@@ -24,7 +25,6 @@ REQUIRED_PACKAGES = {
     "mediapipe": "mediapipe==0.10.21",
     "imageio": "imageio==2.34.0",
     "Pillow": "Pillow==10.3.0",
-    "PyOpenAL": "PyOpenAL==0.7.11a1",
     "pygame": "pygame==2.5.0",
     "screeninfo": "screeninfo==0.8.1"
 }
@@ -60,7 +60,7 @@ def install_dependencies():
     print("Verificando dependencias...")
     try:
         subprocess.run(
-            [python_path, "-c", "import cv2, numpy, mediapipe, imageio, PIL, openal, screeninfo"],
+            [python_path, "-c", "import cv2, numpy, mediapipe, imageio, PIL, pygame, screeninfo"],
             check=True
         )
     except subprocess.CalledProcessError as e:
@@ -79,6 +79,7 @@ try:
     import concurrent.futures
     from screeninfo import get_monitors
     from openal import *
+    import pygame
 except ImportError:
     install_dependencies()
 
@@ -91,6 +92,10 @@ hands = mp_hands.Hands(
     min_tracking_confidence=0.3,
     model_complexity=0
 )
+
+# Inicializar pygame
+pygame.mixer.init(frequency=44100, size=-16, channels=2)
+pygame.init()
 
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 menu_cache = {'main': None, 'settings': None}
@@ -150,6 +155,15 @@ button_layout = {
     'main': {'play': (0.25, 0.2, 0.75, 0.35), 'settings': (0.25, 0.4, 0.75, 0.55), 'exit': (0.25, 0.6, 0.75, 0.75)},
     'settings': {'pong2': (0.25, 0.2, 0.75, 0.3), 'retro': (0.25, 0.35, 0.75, 0.45), 'debug': (0.25, 0.5, 0.75, 0.6), 'rectangles': (0.25, 0.65, 0.75, 0.75), 'back': (0.25, 0.8, 0.75, 0.9)}
 }
+
+def load_sound(filename):
+    if not os.path.exists(filename):
+        return None
+    sound = pygame.mixer.Sound(filename)
+    sound.set_volume(1.0)
+    return sound
+
+click_sound = load_sound("click_sound.mp3")
 
 # --- Callback de ratón ---
 def mouse_callback(event, x, y, flags, param):
@@ -248,17 +262,10 @@ threading.Thread(target=async_hand_detection, daemon=True).start()
 
 # --- Sistema de sonido ---
 def play_click_sound():
-    def sound_task():
-        try:
-            source = oalOpen("click_sound.wav")
-            source.play()
-            while source.get_state() == AL_PLAYING:
-                pass
-        except Exception as e:
-            print(f"Error sonido: {e}")
-        finally:
-            oalQuit()
-    threading.Thread(target=sound_task, daemon=True).start()
+    if click_sound:
+        channel = pygame.mixer.Channel(1)
+        channel.set_volume(1.0, 1.0)
+        channel.play(click_sound)
 
 # --- Manejo de interacciones ---
 def handle_clicks():
@@ -288,6 +295,10 @@ def handle_clicks():
                     os._exit(0)
                 elif button_name == 'settings':
                     current_menu = 1
+                elif button_name == 'exit':
+                    cap.release()
+                    cv2.destroyAllWindows()
+                    os._exit(0)
             else:
                 if button_name == 'pong2':
                     selected_version = "Pong 2"
