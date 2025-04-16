@@ -20,6 +20,8 @@ RECTANGULO_HEIGHT = 90
 BALL_SIZE = 10
 MIN_SPEED = 5
 MAX_SPEED = 40
+BALL_COLOR_SPEED_FAST = (255, 0, 0)    # Rojo
+BALL_COLOR_SPEED_SLOW = (0, 0, 255)    # Azul
 
 # Variables de pantalla
 WIDTH = 1280
@@ -191,11 +193,27 @@ def process_hands(results):
     
     return hand_data, left_hand_detected, right_hand_detected
 
+def get_ball_color():
+    # Calcular la velocidad actual de la pelota
+    current_speed = np.sqrt(ballSpeedX**2 + ballSpeedY**2)
+    
+    # Normalizar la velocidad entre 0 y 1 (MIN_SPEED a MAX_SPEED)
+    normalized_speed = (current_speed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)
+    normalized_speed = max(0, min(1, normalized_speed))  # Asegurar que está en el rango [0,1]
+    
+    # Interpolar linealmente entre los colores
+    red = int(BALL_COLOR_SPEED_SLOW[0] * (1 - normalized_speed) + BALL_COLOR_SPEED_FAST[0] * normalized_speed)
+    green = int(BALL_COLOR_SPEED_SLOW[1] * (1 - normalized_speed) + BALL_COLOR_SPEED_FAST[1] * normalized_speed)
+    blue = int(BALL_COLOR_SPEED_SLOW[2] * (1 - normalized_speed) + BALL_COLOR_SPEED_FAST[2] * normalized_speed)
+    
+    return (blue, green, red)  # OpenCV usa BGR en lugar de RGB
+
 def draw_ball(frame):
     try:
         x, y = int(ballPosition[0]), int(ballPosition[1])
         ball_size = max(5, int(min(WIDTH, HEIGHT) * 0.015))
-        cv2.circle(frame, (x, y), ball_size, (255, 255, 255), -1)
+        ball_color = get_ball_color()
+        cv2.circle(frame, (x, y), ball_size, ball_color, -1)
     except Exception as e:
         print(f"Error drawing ball: {e}")
 
