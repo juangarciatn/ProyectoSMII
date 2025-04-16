@@ -69,7 +69,7 @@ def install_dependencies():
     
     # Reinicio limpio para Windows
     print("Reiniciando aplicación...")
-    os.execl(python_path, python_path, '"' + __file__ + '"')
+    os.execl(python_path, python_path, __file__)
 
 try:
     import cv2
@@ -78,7 +78,6 @@ try:
     from PIL import Image, ImageSequence
     import concurrent.futures
     from screeninfo import get_monitors
-    from openal import *
     import pygame
 except ImportError:
     install_dependencies()
