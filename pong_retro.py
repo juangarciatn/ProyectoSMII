@@ -74,7 +74,7 @@ def initialize_game():
     # Verificar argumentos de línea de comandos
     args = [arg.lower() for arg in sys.argv[1:]]
     DEBUG_MODE = "debug" in args
-    RECTANGLE_MODE = "rectangle" in args
+    RECTANGLE_MODE = "rectangles" in args
     
     try:
         screen_info = pygame.display.Info()
