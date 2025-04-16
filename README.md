@@ -1,1 +1,1 @@
-# PONG con reconocimiento de colores y manos
+# PONG AR con reconocimiento de manos
