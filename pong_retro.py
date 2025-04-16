@@ -414,6 +414,7 @@ def update_ball_position(hand_data):
 
 def main():
     initialize_game()
+    cap = None  # Inicializar la variable fuera del try
     
     try:
         cap = cv2.VideoCapture(0)
@@ -461,10 +462,13 @@ def main():
             elif key == 27:  # 27 es el código para la tecla ESC
                 close()
 
+    except KeyboardInterrupt:
+        print("\nInterrupción por teclado detectada")
     except Exception as e:
-        print(f"Bug in the game: {e}")
+        print(f"Error en el juego: {e}")
     finally:
-        cap.release()
+        if cap is not None:  # Verificar si la cámara fue inicializada
+            cap.release()
         cv2.destroyAllWindows()
         pygame.quit()
 
