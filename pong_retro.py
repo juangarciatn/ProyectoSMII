@@ -124,7 +124,7 @@ def draw_rectangle_hands(frame, hand_data):
     
     try:
         for hand_label, rect in hand_data:
-            color = (0, 255, 0)  # Verde
+            color = (0, 255, 0)
             thickness = max(2, int(min(WIDTH, HEIGHT) * 0.003))
             
             # Dibujar rectángulo alrededor de la mano
@@ -150,11 +150,20 @@ def process_hands(results):
     right_hand_detected = False
 
     if results.multi_hand_landmarks:
-        for landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
-            hand_label = handedness.classification[0].label
+        hands_info = []
+        for landmarks in results.multi_hand_landmarks:
             rect = get_hand_rect(landmarks)
+            center_x = (rect[0][0] + rect[1][0]) // 2
+            hands_info.append((center_x, rect))
+        
+        # Ordenar las manos por posición horizontal (de izquierda a derecha)
+        hands_info.sort(key=lambda x: x[0])
+        
+        # Asignar etiquetas basadas en posición
+        for i, (center_x, rect) in enumerate(hands_info):
+            hand_label = 'Left' if i == 0 else 'Right'  # La mano más a la izquierda es Left, la otra Right
             hand_data.append((hand_label, rect))
-
+            
             center_y = (rect[0][1] + rect[1][1]) // 2
             if hand_label == 'Left':
                 left_hand_detected = True
