@@ -35,6 +35,9 @@ paused = False
 # Variables para modos
 DEBUG_MODE = False
 RECTANGLE_MODE = False
+BOT_PLAYER = False
+BOT_PLAYERS = False
+BOT_LEFT = False
 
 def close():
     print("Closing game...")
@@ -320,6 +323,32 @@ def draw_pause_message(frame):
             cv2.putText(frame, continue_text,
                        (WIDTH // 2 - continue_size[0] // 2, HEIGHT // 2 + 20),
                        cv2.FONT_HERSHEY_SIMPLEX, font_scale-0.2, (255, 255, 255), thickness-1)
+            
+            # Añadir instrucciones de teclado
+            instructions = [
+                "'Q' --> Go to menu",
+                "'ESC' --> Close game"
+            ]
+            
+            instruction_font_scale = font_scale - 0.3
+            instruction_thickness = thickness - 1
+            
+            # Calcular la posición inicial para las instrucciones
+            total_instructions_height = 0
+            for instruction in instructions:
+                text_size = cv2.getTextSize(instruction, cv2.FONT_HERSHEY_SIMPLEX, 
+                                          instruction_font_scale, instruction_thickness)[0]
+                total_instructions_height += text_size[1] + 10
+            
+            start_y = HEIGHT // 2 + 80
+            
+            for i, instruction in enumerate(instructions):
+                text_size = cv2.getTextSize(instruction, cv2.FONT_HERSHEY_SIMPLEX, 
+                                          instruction_font_scale, instruction_thickness)[0]
+                cv2.putText(frame, instruction,
+                           (WIDTH // 2 - text_size[0] // 2, start_y + i * (text_size[1] + 10)),
+                           cv2.FONT_HERSHEY_SIMPLEX, instruction_font_scale, 
+                           (200, 200, 200), instruction_thickness)
             
     except Exception as e:
         print(f"Error drawing pause message: {e}")
