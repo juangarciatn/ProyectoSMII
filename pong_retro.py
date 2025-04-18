@@ -35,9 +35,8 @@ paused = False
 # Variables para modos
 DEBUG_MODE = False
 RECTANGLE_MODE = False
-BOT_PLAYER = False
-BOT_PLAYERS = False
-BOT_LEFT = False
+WIN_MODE = False
+MAX_POINTS_WIN_MODE = 15
 
 def close():
     print("Closing game...")
@@ -75,12 +74,14 @@ def initialize_game():
     global hands, mp_hands, mp_drawing
     global WIDTH, HEIGHT, POS_HORIZONTAL_IZQUIERDA, POS_HORIZONTAL_DERECHA
     global RECTANGULO_HEIGHT, DEBUG_MODE, RECTANGLE_MODE
+    global MAX_POINTS_WIN_MODE, WIN_MODE
     
-    # Verificar argumentos de línea de comandos
+    # Verificar argumentos de lÃ­nea de comandos
     args = [arg.lower() for arg in sys.argv[1:]]
     DEBUG_MODE = "debug" in args
     RECTANGLE_MODE = "rectangles" in args
-    
+    WIN_MODE = "win" in args
+
     try:
         screen_info = pygame.display.Info()
         WIDTH = screen_info.current_w
@@ -161,12 +162,25 @@ def process_hands(results):
             center_x = (rect[0][0] + rect[1][0]) // 2
             hands_info.append((center_x, rect))
         
-        # Ordenar las manos por posición horizontal (de izquierda a derecha)
+        # Ordenar las manos por posición horizontal
         hands_info.sort(key=lambda x: x[0])
         
-        # Asignar etiquetas basadas en posición
-        for i, (center_x, rect) in enumerate(hands_info):
-            hand_label = 'Left' if i == 0 else 'Right'  # La mano más a la izquierda es Left, la otra Right
+        # Asignar etiquetas basadas en posición real en pantalla
+        left_hand_assigned = False
+        right_hand_assigned = False
+        
+        for (center_x, rect) in hands_info:
+            # Determinar si la mano está en la mitad izquierda de la pantalla
+            if center_x < WIDTH / 2 and not left_hand_assigned:
+                hand_label = 'Left'
+                left_hand_assigned = True
+            # Determinar si la mano está en la mitad derecha
+            elif center_x >= WIDTH / 2 and not right_hand_assigned:
+                hand_label = 'Right'
+                right_hand_assigned = True
+            else:
+                continue  # Ignorar manos adicionales
+            
             hand_data.append((hand_label, rect))
             
             center_y = (rect[0][1] + rect[1][1]) // 2
@@ -176,7 +190,7 @@ def process_hands(results):
             elif hand_label == 'Right':
                 right_hand_detected = True
                 right_paddle_y = max(0, min(HEIGHT - RECTANGULO_HEIGHT, center_y - RECTANGULO_HEIGHT // 2))
-    
+
     # Actualizar contadores de detección con umbral más sensible
     if not left_hand_detected:
         COUNT_DOWN_LEFT_HAND = max(0, COUNT_DOWN_LEFT_HAND - 1/20)  # Decremento más rápido (1 segundo para llegar a 0)
