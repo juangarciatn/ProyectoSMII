@@ -117,6 +117,33 @@ def initialize_game():
     )
     mp_drawing = mp.solutions.drawing_utils
 
+def reset_game():
+    global left_score, right_score, left_paddle_y, right_paddle_y
+    global ballPosition, ballSpeedX, ballSpeedY, last_touched
+    global COUNT_DOWN_LEFT_HAND, COUNT_DOWN_RIGHT_HAND, paused
+    
+    # Resetear marcadores
+    left_score = 0
+    right_score = 0
+    
+    # Resetear posición de las palas
+    left_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
+    right_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
+    
+    # Resetear pelota
+    reset_ball(direction=random.choice([-1, 1]))
+    
+    # Resetear temporizadores de manos
+    COUNT_DOWN_LEFT_HAND = 2
+    COUNT_DOWN_RIGHT_HAND = 2
+    paused = False
+    
+    # Reproducir sonido de reinicio si está disponible
+    if countdown_sound:
+        countdown_sound.play()
+    
+    print("Game has been reset")
+
 def get_hand_rect(hand_landmarks):
     x_coords = [lm.x * WIDTH for lm in hand_landmarks.landmark]
     y_coords = [lm.y * HEIGHT for lm in hand_landmarks.landmark]
@@ -341,7 +368,8 @@ def draw_pause_message(frame):
             # Añadir instrucciones de teclado
             instructions = [
                 "'Q' --> Go to menu",
-                "'ESC' --> Close game"
+                "'ESC' --> Close game",
+                "'R' --> Reset game"
             ]
             
             instruction_font_scale = font_scale - 0.3
@@ -531,6 +559,8 @@ def main():
                 break
             elif key == 27:  # 27 es el código para la tecla ESC
                 close()
+            elif key & 0xFF == ord('r'):  # Tecla R para resetear
+                reset_game()
 
     except KeyboardInterrupt:
         print("\nInterrupción por teclado detectada")
