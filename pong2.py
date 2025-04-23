@@ -18,7 +18,8 @@ except Exception as e:
     print(f"Error inicializando pygame.mixer: {e}")
 
 
-
+PONG = "assets/pong.mp3"
+WIN = "assets/win.mp3"
 
 # Añade esto después de inicializar el mixer
 pygame.mixer.music.set_volume(1.0)  # Volumen global al máximo
@@ -41,8 +42,8 @@ icons = {
 def load_sound(filename):
     return pygame.mixer.Sound(filename) if os.path.exists(filename) else None
 
-pong_sound = load_sound("pong.mp3")
-win_sound = load_sound("win.mp3")
+pong_sound = load_sound(PONG)
+win_sound = load_sound(WIN)
 
 # Configuración de la ventana
 WIDTH = 640
@@ -176,11 +177,11 @@ class AudioSystem:
     def __init__(self):
         pygame.mixer.init()
         self.sounds = {
-            "left": self._load_sound("pong.mpeg"),
-            "right": self._load_sound("pong.mpeg"),
-            "wall": self._load_sound("pong.mpeg"),
-            "score": self._load_sound("win.mp3"),
-            "start": self._load_sound("win.mp3")
+            "left": self._load_sound(PONG),
+            "right": self._load_sound(PONG),
+            "wall": self._load_sound(PONG),
+            "score": self._load_sound(WIN),
+            "start": self._load_sound(WIN)
         }
         self.channels = {
             "left": pygame.mixer.Channel(0),
@@ -805,9 +806,20 @@ def main(args):
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
-            print("Leaving pong2.py...")
-            print("Going to menu.py...")
-            subprocess.Popen([sys.executable, "menu.py"])
+            print("Volviendo al menú con los ajustes actuales...")
+            command = [
+                sys.executable, 
+                "menu.py", 
+                "--music-volume", 
+                str(args.music_volume)
+            ]
+            
+            if 'debug' in args.extras:
+                command.append("--debug")
+            if 'rectangles' in args.extras:
+                command.append("--rectangles")
+            
+            subprocess.Popen(command)
             break
         elif key == 27:  # 27 es el código ASCII para ESC
             print("Closing pong2.py...")

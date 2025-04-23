@@ -5,6 +5,14 @@ import venv
 import threading
 import concurrent.futures
 import time
+import argparse
+
+# Configurar argumentos
+parser = argparse.ArgumentParser()
+parser.add_argument("--music-volume", type=float, default=0.5)
+parser.add_argument("--debug", action="store_true")
+parser.add_argument("--rectangles", action="store_true")
+args = parser.parse_args()
 
 # --- Variables globales ---
 PONG2 = "pong2.py"
@@ -14,11 +22,11 @@ WINDOW_NAME = "PongMenu"
 CAMERA_RESOLUTION = (640, 480)
 DISPLAY_RESOLUTION = (640, 480)
 FRAME_SKIP = 2
-music_volume = 0.5
+music_volume = args.music_volume
+debug_enabled = args.debug
+rectangle_enabled = args.rectangles
 dragging_volume = False
 selected_version = "Pong 2"
-debug_enabled = False
-rectangle_enabled = False
 use_mouse = True  # Modo ratón/hand tracking inicializado por defecto
 
 REQUIRED_PACKAGES = {
@@ -338,7 +346,7 @@ def handle_clicks():
                     else:
                         python_path = os.path.join(venv_dir, "bin", "python")
                     script = PONG2 if selected_version == "Pong 2" else PONGRETRO
-                    args = [python_path, script]
+                    args = [python_path, script, "--music-volume", str(music_volume)]
                     if debug_enabled: args.append("debug")
                     if rectangle_enabled: args.append("rectangles")
                     
