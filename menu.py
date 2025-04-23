@@ -32,44 +32,47 @@ REQUIRED_PACKAGES = {
 def install_dependencies():
     venv_dir = os.path.join(os.path.dirname(__file__), "pong_venv")
     
-    # Configuración correcta de rutas para Windows
+    # Eliminar entorno virtual existente si falló
+    if os.path.exists(venv_dir):
+        import shutil
+        shutil.rmtree(venv_dir)
+    
+    print("Creando entorno virtual...")
+    venv.create(venv_dir, with_pip=True)
+    
+    # Configurar rutas correctamente
     if os.name == 'nt':
         python_path = os.path.join(venv_dir, "Scripts", "python.exe")
+        pip_path = os.path.join(venv_dir, "Scripts", "pip.exe")
     else:
         python_path = os.path.join(venv_dir, "bin", "python")
-    
-    if not os.path.exists(venv_dir):
-        print("Creando entorno virtual...")
-        venv.create(venv_dir, with_pip=True)
-    
-    # Instalación con timeout extendido y manejo de errores
-    for package in REQUIRED_PACKAGES.values():
-        print(f"Instalando {package}...")
-        try:
-            subprocess.run(
-                [python_path, "-m", "pip", "install", "--default-timeout=1000", package],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT
-            )
-        except subprocess.CalledProcessError as e:
-            print(f"Error instalando {package}: {e}")
-            sys.exit(1)
-    
-    # Verificación final
-    print("Verificando dependencias...")
+        pip_path = os.path.join(venv_dir, "bin", "pip")
+
+    # Instalar paquetes con pip del venv
+    packages = list(REQUIRED_PACKAGES.values())
+    try:
+        subprocess.run(
+            [pip_path, "install", "--disable-pip-version-check"] + packages,
+            check=True,
+            timeout=120
+        )
+    except Exception as e:
+        print(f"Error instalación: {str(e)}")
+        sys.exit(1)
+
+    # Verificar instalación
     try:
         subprocess.run(
             [python_path, "-c", "import cv2, numpy, mediapipe, imageio, PIL, pygame, screeninfo"],
             check=True
         )
-    except subprocess.CalledProcessError as e:
-        print(f"Error verificando dependencias: {e}")
+    except subprocess.CalledProcessError:
+        print("Falló la verificación de dependencias")
         sys.exit(1)
-    
-    # Reinicio limpio para Windows
-    print("Reiniciando aplicación...")
-    os.execl(python_path, python_path, __file__)
+
+    # Reiniciar usando el python del venv
+    print("Reiniciando...")
+    os.execl(python_path, python_path, os.path.abspath(__file__))
 
 try:
     import cv2
