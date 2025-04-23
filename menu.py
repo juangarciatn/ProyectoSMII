@@ -14,6 +14,8 @@ WINDOW_NAME = "PongMenu"
 CAMERA_RESOLUTION = (640, 480)
 DISPLAY_RESOLUTION = (640, 480)
 FRAME_SKIP = 2
+music_volume = 0.5
+dragging_volume = False
 selected_version = "Pong 2"
 debug_enabled = False
 rectangle_enabled = False
@@ -88,9 +90,6 @@ hands = mp_hands.Hands(
     model_complexity=0
 )
 
-# Inicializar pygame
-pygame.mixer.init(frequency=44100, size=-16, channels=2)
-pygame.init()
 
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 menu_cache = {'main': None, 'settings': None}
@@ -120,7 +119,7 @@ cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M','J','P','G'))
 # --- Carga del GIF ---
 def load_optimized_gif():
     try:
-        gif = Image.open(GIF_PATH)
+        gif = Image.open("assets/"+GIF_PATH)
         frames = []
         for i, frame in enumerate(ImageSequence.Iterator(gif)):
             if i % 2 == 0:
@@ -147,25 +146,54 @@ mouse_click = False
 hand_results = None
 
 button_layout = {
-    'main': {'play': (0.25, 0.2, 0.75, 0.35), 'settings': (0.25, 0.4, 0.75, 0.55), 'exit': (0.25, 0.6, 0.75, 0.75)},
-    'settings': {'pong2': (0.25, 0.2, 0.75, 0.3), 'retro': (0.25, 0.35, 0.75, 0.45), 'debug': (0.25, 0.5, 0.75, 0.6), 'rectangles': (0.25, 0.65, 0.75, 0.75), 'back': (0.25, 0.8, 0.75, 0.9)}
+    'main': {
+        'play': (0.25, 0.2, 0.75, 0.35),
+        'settings': (0.25, 0.4, 0.75, 0.55),
+        'exit': (0.25, 0.6, 0.75, 0.75)
+    },
+    'settings': {
+        'pong2': (0.25, 0.1, 0.75, 0.2),
+        'retro': (0.25, 0.25, 0.75, 0.35),
+        'volume': (0.25, 0.4, 0.75, 0.5),
+        'debug': (0.25, 0.55, 0.75, 0.65),
+        'rectangles': (0.25, 0.7, 0.75, 0.8),
+        'back': (0.25, 0.85, 0.75, 0.95)
+    }
 }
 
 def load_sound(filename):
-    if not os.path.exists(filename):
+    asset_path = os.path.join("assets", filename)
+    if not os.path.exists(asset_path):
         return None
-    sound = pygame.mixer.Sound(filename)
+    sound = pygame.mixer.Sound(asset_path)
     sound.set_volume(1.0)
     return sound
 
-click_sound = load_sound("click_sound.mp3")
+# Añadir esta función para cargar la música
+def setup_background_music():
+    music_path = os.path.join("assets", "arcade_acadia.mp3")
+    if os.path.exists(music_path):
+        pygame.mixer.music.load(music_path)
+        pygame.mixer.music.set_volume(music_volume)
+        pygame.mixer.music.play(-1)
 
 # --- Callback de ratón ---
 def mouse_callback(event, x, y, flags, param):
     global cursor_pos, mouse_click, use_mouse
     use_mouse = True
     cursor_pos = (x, y)
-    mouse_click = True if event == cv2.EVENT_LBUTTONDOWN else False
+    if event == cv2.EVENT_LBUTTONDOWN:
+        mouse_click = True
+        # Verificar si se hizo clic en el slider
+        (x1, y1), (x2, y2) = button_coords['settings']['volume']
+        if x1 <= x <= x2 and y1 <= y <= y2:
+            dragging_volume = True
+    elif event == cv2.EVENT_LBUTTONUP:
+        mouse_click = False
+        dragging_volume = False
+    elif event == cv2.EVENT_MOUSEMOVE and dragging_volume:
+        # Actualizar volumen durante el arrastre
+        handle_clicks()
 
 cv2.setMouseCallback(WINDOW_NAME, mouse_callback)
 
@@ -217,11 +245,31 @@ def draw_main_menu(frame):
                    button_coords['main'][btn])
 
 def draw_settings_menu(frame):
-    states = {'pong2': selected_version == "Pong 2", 'retro': selected_version == "retro",
-              'debug': debug_enabled, 'rectangles': rectangle_enabled}
+    global music_volume
+    states = {
+        'pong2': selected_version == "Pong 2",
+        'retro': selected_version == "retro",
+        'debug': debug_enabled,
+        'rectangles': rectangle_enabled
+    }
+    
+    # Dibujar botones normales
     for btn in ['pong2', 'retro', 'debug', 'rectangles', 'back']:
         text = ['Pong 2', 'Version Retro', 'Modo Debug', 'Modo Rectangulo', 'Volver'][['pong2', 'retro', 'debug', 'rectangles', 'back'].index(btn)]
         draw_button(frame, text, button_coords['settings'][btn], states.get(btn, False))
+    
+    # Dibujar slider de volumen
+    (x1, y1), (x2, y2) = button_coords['settings']['volume']
+    slider_width = x2 - x1
+    thumb_x = x1 + int(music_volume * slider_width)
+    
+    # Barra de fondo
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (30, 30, 30, 200), -1)
+    # Barra de volumen
+    cv2.rectangle(frame, (x1, y1), (thumb_x, y2), (0, 200, 0, 200), -1)
+    # Texto
+    cv2.putText(frame, f"Volumen: {int(music_volume*100)}%", 
+                (x1 + 10, y1 + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
 build_menu_cache()
 
@@ -264,9 +312,20 @@ def play_click_sound():
 
 # --- Manejo de interacciones ---
 def handle_clicks():
-    global current_menu, selected_version, debug_enabled, rectangle_enabled
+    global current_menu, selected_version, debug_enabled, rectangle_enabled, music_volume
     x, y = cursor_pos
     menu_type = 'main' if current_menu == 0 else 'settings'
+
+    # Manejar slider de volumen si estamos en ajustes
+    if current_menu == 1:
+        (x1, y1), (x2, y2) = button_coords['settings']['volume']
+        if x1 <= x <= x2 and y1 <= y <= y2:
+            slider_width = x2 - x1
+            new_volume = (x - x1) / slider_width
+            music_volume = max(0.0, min(1.0, new_volume))
+            pygame.mixer.music.set_volume(music_volume)
+            build_menu_cache()
+            return  # Salir para evitar conflictos con otros botones
     
     for button_name in button_layout[menu_type]:
         (x1, y1), (x2, y2) = button_coords[menu_type][button_name]
@@ -308,6 +367,16 @@ def handle_clicks():
             build_menu_cache()
             break
 
+try:
+    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+    print("pygame.mixer inicializado correctamente")
+except Exception as e:
+    print(f"Error inicializando pygame.mixer: {e}")
+
+setup_background_music()
+
+click_sound = load_sound("click_sound.mp3")
+
 # --- Bucle principal ---
 while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
     if gif_frames:
@@ -330,9 +399,9 @@ while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
         
         if debug_enabled:
             debug_text = [
-                f"Modo: {'Ratón' if use_mouse else 'Mano'}",
-                f"Posición: {current_cursor}",
-                f"Detección mano: {bool(hand_results.multi_hand_landmarks) if hand_results else False}",
+                f"Modo: {'Raton' if use_mouse else 'Mano'}",
+                f"Posicion: {current_cursor}",
+                f"Deteccion mano: {bool(hand_results.multi_hand_landmarks) if hand_results else False}",
                 f"Click activo: {current_click}"
             ]
             y_offset = 50
@@ -344,13 +413,21 @@ while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
     if current_click:
         handle_clicks()
         play_click_sound()
-        mouse_click = False
+        #mouse_click = False
     
     key = cv2.waitKey(max(1, frame_delay))
     if key == 27:
         break
     elif key == ord('m'):
         use_mouse = not use_mouse
+    elif key == ord('+') and current_menu == 1:
+        music_volume = min(1.0, music_volume + 0.1)
+        pygame.mixer.music.set_volume(music_volume)
+        build_menu_cache()
+    elif key == ord('-') and current_menu == 1:
+        music_volume = max(0.0, music_volume - 0.1)
+        pygame.mixer.music.set_volume(music_volume)
+        build_menu_cache()
     
     cv2.imshow(WINDOW_NAME, bg_frame)
 
