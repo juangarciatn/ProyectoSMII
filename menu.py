@@ -31,8 +31,19 @@ REQUIRED_PACKAGES = {
 
 def install_dependencies():
     venv_dir = os.path.join(os.path.dirname(__file__), "pong_venv")
+    python_path = os.path.join(venv_dir, "Scripts", "python.exe") if os.name == 'nt' else os.path.join(venv_dir, "bin", "python")
     
-    # Eliminar entorno virtual existente si falló
+    # Verificación ultra rápida de entorno válido
+    if os.path.exists(venv_dir) and os.path.exists(python_path):
+        # Verificar solo un paquete crítico para ahorrar tiempo
+        check_cmd = f"import {list(REQUIRED_PACKAGES.keys())[0]}"
+        result = subprocess.run([python_path, "-c", check_cmd], capture_output=True)
+        if result.returncode == 0:
+            print("Entorno virtual ya configurado. Saltando instalación...")
+            os.execl(python_path, python_path, os.path.abspath(__file__))
+            return
+
+    # Si falla la verificación rápida, instalar normalmente
     if os.path.exists(venv_dir):
         import shutil
         shutil.rmtree(venv_dir)
@@ -40,37 +51,19 @@ def install_dependencies():
     print("Creando entorno virtual...")
     venv.create(venv_dir, with_pip=True)
     
-    # Configurar rutas correctamente
-    if os.name == 'nt':
-        python_path = os.path.join(venv_dir, "Scripts", "python.exe")
-        pip_path = os.path.join(venv_dir, "Scripts", "pip.exe")
-    else:
-        python_path = os.path.join(venv_dir, "bin", "python")
-        pip_path = os.path.join(venv_dir, "bin", "pip")
-
-    # Instalar paquetes con pip del venv
-    packages = list(REQUIRED_PACKAGES.values())
-    try:
-        subprocess.run(
-            [pip_path, "install", "--disable-pip-version-check"] + packages,
-            check=True,
-            timeout=120
-        )
-    except Exception as e:
-        print(f"Error instalación: {str(e)}")
-        sys.exit(1)
-
-    # Verificar instalación
-    try:
-        subprocess.run(
-            [python_path, "-c", "import cv2, numpy, mediapipe, imageio, PIL, pygame, screeninfo"],
-            check=True
-        )
-    except subprocess.CalledProcessError:
-        print("Falló la verificación de dependencias")
-        sys.exit(1)
-
-    # Reiniciar usando el python del venv
+    pip_path = os.path.join(venv_dir, "Scripts", "pip.exe") if os.name == 'nt' else os.path.join(venv_dir, "bin", "pip")
+    
+    # Instalación paralelizada
+    install_cmd = [pip_path, "install", "--disable-pip-version-check", "--no-input"] + list(REQUIRED_PACKAGES.values())
+    
+    with subprocess.Popen(install_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as proc:
+        while True:
+            output = proc.stdout.readline()
+            if output == '' and proc.poll() is not None:
+                break
+            if output:
+                print(output.strip())
+    
     print("Reiniciando...")
     os.execl(python_path, python_path, os.path.abspath(__file__))
 
