@@ -19,7 +19,7 @@ PONG2 = "pong2.py"
 PONGRETRO = "pong_retro.py"
 GIF_PATH = "ponggif.gif"
 WINDOW_NAME = "PongMenu"
-CAMERA_RESOLUTION = (640, 480)
+CAMERA_RESOLUTION = (1280, 720)
 DISPLAY_RESOLUTION = (640, 480)
 FRAME_SKIP = 1
 music_volume = args.music_volume
@@ -193,7 +193,7 @@ def setup_background_music():
 
 # --- Callback de ratón ---
 def mouse_callback(event, x, y, flags, param):
-    global cursor_pos, mouse_click, use_mouse
+    global cursor_pos, mouse_click, use_mouse, dragging_volume
     use_mouse = True
     cursor_pos = (x, y)
     if event == cv2.EVENT_LBUTTONDOWN:
