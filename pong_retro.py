@@ -7,10 +7,20 @@ import time
 import subprocess
 import random
 import sys
+import argparse
 
 # Inicializar pygame
-pygame.mixer.init(frequency=44100, size=-16, channels=2)
-pygame.init()
+try:
+    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+    print("pygame.mixer inicializado correctamente")
+except Exception as e:
+    print(f"Error inicializando pygame.mixer: {e}")
+
+PONG = "assets/pong.mp3"
+WIN = "assets/win.mp3"
+
+# Añade esto después de inicializar el mixer
+pygame.mixer.music.set_volume(1.0)  # Volumen global al máximo
 
 # Constantes del juego
 COUNT_DOWN_LEFT_HAND = 2
@@ -43,12 +53,6 @@ def close():
     cv2.destroyAllWindows()
     pygame.quit()
     sys.exit(0)
-
-def scape_to_menu():
-    print("Leaving pong_retro.py...")
-    print("Going to menu.py...")
-    cv2.destroyAllWindows()
-    subprocess.Popen(["python", "menu.py"])
 
 def load_sound(filename):
     if not os.path.exists(filename):
@@ -97,9 +101,9 @@ def initialize_game():
     POS_HORIZONTAL_DERECHA = int(WIDTH * 0.95)
     RECTANGULO_HEIGHT = max(60, int(HEIGHT * 0.15))
     
-    pong_sound = load_sound("pong.mpeg")
-    win_sound = load_sound("win.mp3")
-    countdown_sound = load_sound("countdown.mp3")
+    pong_sound = load_sound(PONG)
+    win_sound = load_sound(WIN)
+    #countdown_sound = load_sound("countdown.mp3")
     
     left_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
     right_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
@@ -510,7 +514,15 @@ def update_ball_position(hand_data):
         print(f"Error updating ball position: {e}")
         reset_ball(direction=1 if random.random() > 0.5 else -1)
 
-def main():
+def main(args):
+    try:
+        pygame.mixer.music.load("assets/arcade_acadia.mp3")
+        volume = max(0.0, min(1.0, args.music_volume))  # asegura que esté entre 0.0 y 1.0
+        pygame.mixer.music.set_volume(volume)
+        pygame.mixer.music.play(-1)
+        print(f"🎵 Música cargada con volumen {volume}")
+    except Exception as e:
+        print(f"Error al cargar música: {e}")
     initialize_game()
     cap = None  # Inicializar la variable fuera del try
     
@@ -554,8 +566,21 @@ def main():
             cv2.imshow("Pong AR - Turn-Based", frame)
             
             key = cv2.waitKey(1)
-            if key & 0xFF == ord('q'):
-                scape_to_menu()
+            if key == ord('q'):
+                print("Volviendo al menú con los ajustes actuales...")
+                command = [
+                    sys.executable, 
+                    "menu.py", 
+                    "--music-volume", 
+                    str(args.music_volume)
+                ]
+                
+                if 'debug' in args.extras:
+                    command.append("--debug")
+                if 'rectangles' in args.extras:
+                    command.append("--rectangles")
+                
+                subprocess.Popen(command)
                 break
             elif key == 27:  # 27 es el código para la tecla ESC
                 close()
@@ -573,4 +598,8 @@ def main():
         pygame.quit()
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Pong Retro - AR Edition")
+    parser.add_argument("--music-volume", type=float, default=0.5, help="Volumen de la música (0.0 a 1.0)")
+    parser.add_argument("extras", nargs="*", help="Argumentos extra como 'debug' o 'rectangles'")
+    args = parser.parse_args()
+    main(args)

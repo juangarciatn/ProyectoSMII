@@ -21,13 +21,19 @@ GIF_PATH = "ponggif.gif"
 WINDOW_NAME = "PongMenu"
 CAMERA_RESOLUTION = (640, 480)
 DISPLAY_RESOLUTION = (640, 480)
-FRAME_SKIP = 2
+FRAME_SKIP = 1
 music_volume = args.music_volume
 debug_enabled = args.debug
 rectangle_enabled = args.rectangles
 dragging_volume = False
 selected_version = "Pong 2"
-use_mouse = True  # Modo ratón/hand tracking inicializado por defecto
+use_mouse = True
+last_click_time = 0
+DEBOUNCE_TIME = 0.15 #300ms
+click_active = False
+last_mouse_click = False
+click_processed = False
+
 
 REQUIRED_PACKAGES = {
     "cv2": "opencv-python==4.9.0.80",
@@ -93,8 +99,8 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=1,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.3,
+    min_detection_confidence=0.8,
+    min_tracking_confidence=0.7,
     model_complexity=0
 )
 
@@ -283,31 +289,80 @@ build_menu_cache()
 
 # --- Detección de manos ---
 def async_hand_detection():
-    global cursor_pos, click_detected, hand_results
+    global cursor_pos, click_detected, hand_results, click_active, last_click_time, dragging_volume
+    prev_pos = None
+    SMOOTHING_FACTOR = 0.15
+    CLICK_THRESHOLD = 0.07
+    DEBOUNCE_TIME = 0.3  # 300ms entre clics
+    MIN_HOLD_TIME = 0.1  # 100ms de contacto mínimo
+    contact_start_time = 0
+
     while True:
-        for _ in range(FRAME_SKIP):
-            cap.grab()
-        
-        ret, frame = cap.retrieve()
+        ret, frame = cap.read()
         if not ret:
             continue
         
         frame = cv2.flip(frame, 1)
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        future = executor.submit(hands.process, rgb_frame)
-        hand_results = future.result()
+        hand_results = hands.process(rgb_frame)
         
         if hand_results.multi_hand_landmarks:
             hand = hand_results.multi_hand_landmarks[0]
             idx = mp_hands.HandLandmark.INDEX_FINGER_TIP
             thumb = mp_hands.HandLandmark.THUMB_TIP
             
+            # Coordenadas normalizadas
             idx_x = hand.landmark[idx].x
             idx_y = hand.landmark[idx].y
             thumb_x = hand.landmark[thumb].x
+            thumb_y = hand.landmark[thumb].y
             
-            cursor_pos = (int(idx_x * screen_width), int(idx_y * screen_height))
-            click_detected = np.hypot(idx_x - thumb_x, idx_y - hand.landmark[thumb].y) < 0.05
+            # Suavizado de posición
+            raw_pos = (int(idx_x * screen_width), int(idx_y * screen_height))
+            if prev_pos:
+                cursor_pos = (
+                    int(raw_pos[0] * (1 - SMOOTHING_FACTOR) + prev_pos[0] * SMOOTHING_FACTOR),
+                    int(raw_pos[1] * (1 - SMOOTHING_FACTOR) + prev_pos[1] * SMOOTHING_FACTOR)
+                )
+            else:
+                cursor_pos = raw_pos
+            prev_pos = cursor_pos
+            
+            # Cálculo de distancia
+            distance = np.hypot(idx_x - thumb_x, idx_y - thumb_y)
+            current_time = time.time()
+            
+            # Lógica de estados mejorada
+            if distance < CLICK_THRESHOLD:
+                if not click_active:
+                    click_active = True
+                    contact_start_time = current_time  # Registrar inicio de contacto
+                else:
+                    # Verificar tiempo de contacto y debounce
+                    if (current_time - contact_start_time >= MIN_HOLD_TIME) and \
+                       (current_time - last_click_time >= DEBOUNCE_TIME):
+                        click_detected = True
+                        last_click_time = current_time
+            else:
+                click_active = False
+                click_detected = False
+            
+            # Detectar arrastre
+            if click_active and (current_time - contact_start_time >= MIN_HOLD_TIME):
+                (x1, y1), (x2, y2) = button_coords['settings']['volume']
+                x, y = cursor_pos
+                if current_menu == 1 and x1 <= x <= x2 and y1 <= y <= y2:
+                    dragging_volume = True
+                else:
+                    dragging_volume = False
+            else:
+                dragging_volume = False
+                
+        else:
+            click_active = False
+            click_detected = False
+            dragging_volume = False
+            prev_pos = None
 
 threading.Thread(target=async_hand_detection, daemon=True).start()
 
@@ -387,57 +442,88 @@ click_sound = load_sound("click_sound.mp3")
 
 # --- Bucle principal ---
 while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
+    # Actualizar frame de fondo
     if gif_frames:
         bg_frame = gif_frames[current_gif_frame].copy()
         current_gif_frame = (current_gif_frame + 1) % len(gif_frames)
     else:
         bg_frame = np.zeros((screen_height, screen_width, 4), dtype=np.uint8)
     
+    # Combinar con el menú
     current_menu_type = 'main' if current_menu == 0 else 'settings'
     cv2.addWeighted(bg_frame, 1.0, menu_cache[current_menu_type], 1.0, 0, bg_frame)
     
-    current_click = mouse_click if use_mouse else click_detected
-    current_cursor = cursor_pos if (use_mouse or cursor_pos) else None
+    # Determinar modo de control
+    current_click = False
+    if hand_results and hand_results.multi_hand_landmarks:
+        use_mouse = False
+        current_click = click_detected
+    else:
+        use_mouse = True
+        current_click = mouse_click
     
+    # Dibujar elementos
+    current_cursor = cursor_pos if (use_mouse or cursor_pos) else None
     if current_cursor:
-        color = (0, 255, 0) if use_mouse else (0, 255, 255)
-        marker_size = 20 if use_mouse else 30
-        cv2.drawMarker(bg_frame, current_cursor, color, 
+        # Cursor
+        cursor_color = (0, 255, 0) if use_mouse else (0, 255, 255)
+        marker_size = 20 if use_mouse else 35
+        cv2.drawMarker(bg_frame, current_cursor, cursor_color, 
                       cv2.MARKER_CROSS, marker_size, 2, cv2.LINE_AA)
         
+        # Debug
         if debug_enabled:
-            debug_text = [
+            debug_info = [
                 f"Modo: {'Raton' if use_mouse else 'Mano'}",
                 f"Posicion: {current_cursor}",
-                f"Deteccion mano: {bool(hand_results.multi_hand_landmarks) if hand_results else False}",
-                f"Click activo: {current_click}"
+                f"Click detectado: {click_detected}",
+                f"Contacto activo: {click_active}",
+                f"Ultimo clic: {time.time() - last_click_time:.2f}s",
+                f"Arrastrando: {dragging_volume}"
             ]
+            
+            if hand_results and hand_results.multi_hand_landmarks:
+                hand = hand_results.multi_hand_landmarks[0]
+                idx = mp_hands.HandLandmark.INDEX_FINGER_TIP
+                thumb = mp_hands.HandLandmark.THUMB_TIP
+                idx_x = hand.landmark[idx].x
+                idx_y = hand.landmark[idx].y
+                thumb_x = hand.landmark[thumb].x
+                thumb_y = hand.landmark[thumb].y
+                distance = np.hypot(idx_x - thumb_x, idx_y - thumb_y)
+            
             y_offset = 50
-            for text in debug_text:
-                cv2.putText(bg_frame, text, (20, y_offset), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            for line in debug_info:
+                cv2.putText(bg_frame, line, (20, y_offset), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 y_offset += 30
     
+    # Manejar interacciones
     if current_click:
         handle_clicks()
         play_click_sound()
-        #mouse_click = False
     
+    # Actualización continua durante arrastre
+    if dragging_volume:
+        handle_clicks()
+    
+    # Teclado
     key = cv2.waitKey(max(1, frame_delay))
-    if key == 27:
+    if key == 27:  # ESC
         break
     elif key == ord('m'):
         use_mouse = not use_mouse
     elif key == ord('+') and current_menu == 1:
-        music_volume = min(1.0, music_volume + 0.1)
+        music_volume = min(1.0, music_volume + 0.05)
         pygame.mixer.music.set_volume(music_volume)
         build_menu_cache()
     elif key == ord('-') and current_menu == 1:
-        music_volume = max(0.0, music_volume - 0.1)
+        music_volume = max(0.0, music_volume - 0.05)
         pygame.mixer.music.set_volume(music_volume)
         build_menu_cache()
     
     cv2.imshow(WINDOW_NAME, bg_frame)
 
+# Limpieza
 cap.release()
 cv2.destroyAllWindows()
