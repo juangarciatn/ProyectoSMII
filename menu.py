@@ -190,54 +190,94 @@ def setup_background_music():
         pygame.mixer.music.set_volume(music_volume)
         pygame.mixer.music.play(-1)
 
-def draw_main_menu(frame):
-    cv2.putText(frame, "PONG AR", (int(screen_width*0.15), int(screen_height*0.1)),
-                cv2.FONT_HERSHEY_DUPLEX, 1.2, (255, 255, 0), 3)
-    for btn in ['play', 'settings', 'exit']:
-        draw_button(frame, ['Jugar', 'Ajustes', 'Salir'][['play', 'settings', 'exit'].index(btn)], 
-                   button_coords['main'][btn])
+# Dibuja el menú principal con efecto hover
+def draw_main_menu(frame, hovered_button):
+    # Título del juego
+    cv2.putText(
+        frame,
+        "PONG AR",
+        (int(screen_width * 0.15), int(screen_height * 0.1)),
+        cv2.FONT_HERSHEY_DUPLEX,
+        1.2,
+        (255, 255, 0),
+        3
+    )
+    # Botones del menú
+    labels = ['Jugar', 'Ajustes', 'Salir']
+    keys = ['play', 'settings', 'exit']
+    for key, text in zip(keys, labels):
+        is_hovered = (hovered_button == key)
+        # No hay estado "checked" en el menú principal
+        draw_button(
+            frame,
+            text,
+            button_coords['main'][key],
+            checked=False,
+            hovered=is_hovered
+        )
 
+# Dibuja el menú de ajustes con estados y hover
 def draw_settings_menu(frame):
     global music_volume
+    # Estados "checked" para cada opción
     states = {
-        'pong2': selected_version == "Pong 2",
-        'retro': selected_version == "retro",
+        'pong2': (selected_version == "Pong 2"),
+        'retro': (selected_version == "retro"),
         'debug': debug_enabled,
         'rectangles': rectangle_enabled
     }
-    
-    # Dibujar botones normales
-    for btn in ['pong2', 'retro', 'debug', 'rectangles', 'back']:
-        text = ['Pong 2', 'Version Retro', 'Modo Debug', 'Modo Rectangulo', 'Volver'][['pong2', 'retro', 'debug', 'rectangles', 'back'].index(btn)]
-        draw_button(frame, text, button_coords['settings'][btn], states.get(btn, False))
-    
-    # Dibujar slider de volumen
-    (x1, y1), (x2, y2) = button_coords['settings']['volume']
-    slider_width = x2 - x1
-    thumb_x = x1 + int(music_volume * slider_width)
-    
-    # Barra de fondo
+    # Determinar qué botón está hovered
+    hovered_button = get_hovered_button('settings', cursor_pos)
+    # Botones de opciones
+    option_keys = ['pong2', 'retro', 'debug', 'rectangles', 'back']
+    option_labels = ['Pong 2', 'Version Retro', 'Modo Debug', 'Modo Rectangulo', 'Volver']
+    for key, text in zip(option_keys, option_labels):
+        draw_button(
+            frame,
+            text,
+            button_coords['settings'][key],
+            checked=states.get(key, False),
+            hovered=(hovered_button == key)
+        )
+    # Slider de volumen
+    x1, y1 = button_coords['settings']['volume'][0]
+    x2, y2 = button_coords['settings']['volume'][1]
+    # Fondo del slider
     cv2.rectangle(frame, (x1, y1), (x2, y2), (30, 30, 30, 200), -1)
-    # Barra de volumen
+    # Relleno según volumen
+    thumb_x = x1 + int(music_volume * (x2 - x1))
     cv2.rectangle(frame, (x1, y1), (thumb_x, y2), (0, 200, 0, 200), -1)
-    # Texto
-    cv2.putText(frame, f"Volumen: {int(music_volume*100)}%", 
-                (x1 + 10, y1 + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+    # Texto de porcentaje
+    cv2.putText(
+        frame,
+        f"Volumen: {int(music_volume * 100)}%",
+        (x1 + 10, y1 + 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255, 255, 0),
+        2
+    )
 
+# Construye y almacena en caché los overlays para los menús principal y ajustes
 def build_menu_cache():
     global selected_version, debug_enabled, rectangle_enabled
     for menu_type in ['main', 'settings']:
+        # Crear un overlay transparente del tamaño de la pantalla
         overlay = np.zeros((screen_height, screen_width, 4), dtype=np.uint8)
         if menu_type == 'main':
-            draw_main_menu(overlay)
+            # Dibujar menú principal sin estado hover (se aplica en tiempo real)
+            draw_main_menu(overlay, None)
         else:
+            # Para el menú de ajustes, preservamos temporalmente los estados modificados durante el dibujo
             temp_version = selected_version
             temp_debug = debug_enabled
             temp_rect = rectangle_enabled
             draw_settings_menu(overlay)
+            # Restaurar estados originales para no alterar el flujo de la caché
             selected_version = temp_version
             debug_enabled = temp_debug
             rectangle_enabled = temp_rect
+        # Guardar overlay en el diccionario de caché
         menu_cache[menu_type] = overlay
 
 # --- Manejo de interacciones ---
@@ -342,17 +382,40 @@ for menu_type in ['main', 'settings']:
         y2 = int(coords[3] * screen_height)
         button_coords[menu_type][btn] = ((x1, y1), (x2, y2))
 
-# --- Funciones de dibujo ---
-def draw_button(frame, text, position, checked=False):
+# Devuelve el botón sobre el que está el cursor, o None si no hay ninguno
+def get_hovered_button(menu_type, cursor_pos):
+    if not cursor_pos:
+        return None
+    x, y = cursor_pos
+    # Recorremos cada botón definido en button_layout para el menú dado
+    for btn in button_layout[menu_type]:
+        (x1, y1), (x2, y2) = button_coords[menu_type][btn]
+        # Si el cursor está dentro de las coordenadas del botón, devolvemos su identificador
+        if x1 <= x <= x2 and y1 <= y <= y2:
+            return btn
+    return None
+
+# Dibuja un botón con estado normal, checked y hovered
+def draw_button(frame, text, position, checked=False, hovered=False):
     (x1, y1), (x2, y2) = position
-    cv2.rectangle(frame, (x1, y1), (x2, y2), (30, 30, 30, 200), -1)
+    # Fondo semitransparente diferente si está hovered
+    bg_color = (60, 60, 60, 200) if hovered else (30, 30, 30, 200)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), bg_color, -1)
+
+    # Color de borde: verde si está marcado, blanco en estado normal
     border_color = (0, 255, 0) if checked else (255, 255, 255)
+    # Si está hovered, usar cyan para resaltar
+    if hovered:
+        border_color = (0, 200, 200)
     cv2.rectangle(frame, (x1, y1), (x2, y2), border_color, 2)
+
+    # Ajuste de escala y grosor de texto según tamaño del botón
     text_scale = 0.8 if (x2 - x1) > 500 else 0.5
     thickness = 2 if (x2 - x1) > 500 else 1
-    text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, text_scale, thickness)
-    tx = x1 + ((x2 - x1) - text_size[0][0]) // 2
-    ty = y1 + ((y2 - y1) + text_size[0][1]) // 2
+    # Medir tamaño del texto para centrarlo
+    text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, text_scale, thickness)[0]
+    tx = x1 + ((x2 - x1) - text_size[0]) // 2
+    ty = y1 + ((y2 - y1) + text_size[1]) // 2
     cv2.putText(frame, text, (tx, ty), cv2.FONT_HERSHEY_DUPLEX, text_scale, (255, 255, 0), thickness)
 
 build_menu_cache()
@@ -467,71 +530,65 @@ while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
         current_gif_frame = (current_gif_frame + 1) % len(gif_frames)
     else:
         bg_frame = np.zeros((screen_height, screen_width, 4), dtype=np.uint8)
-    
-    # Combinar con el menú
+
+    # Determinar el tipo de menú actual y el botón bajo el cursor
     current_menu_type = 'main' if current_menu == 0 else 'settings'
-    cv2.addWeighted(bg_frame, 1.0, menu_cache[current_menu_type], 1.0, 0, bg_frame)
-    
-    # Determinar modo de control
-    current_click = False
+    hovered_button = get_hovered_button(current_menu_type, cursor_pos)
+
+    # Redibujar el menú en cada frame con el hover actual
+    if current_menu == 0:
+        menu_overlay = menu_cache['main'].copy()
+        draw_main_menu(menu_overlay, hovered_button)
+    else:
+        menu_overlay = menu_cache['settings'].copy()
+        draw_settings_menu(menu_overlay)
+
+    # Combinar fondo y menú
+    cv2.addWeighted(bg_frame, 1.0, menu_overlay, 1.0, 0, bg_frame)
+
+    # Determinar modo de control y estado de click
     if hand_results and hand_results.multi_hand_landmarks:
         use_mouse = False
         current_click = click_detected
     else:
         use_mouse = True
         current_click = mouse_click
-    
-    # Dibujar elementos
-    current_cursor = cursor_pos if (use_mouse or cursor_pos) else None
-    if current_cursor:
-        # Cursor
+
+    # Dibujar cursor y debug si está activado
+    if cursor_pos:
         cursor_color = (0, 255, 0) if use_mouse else (0, 255, 255)
         marker_size = 20 if use_mouse else 35
-        cv2.drawMarker(bg_frame, current_cursor, cursor_color, 
-                      cv2.MARKER_CROSS, marker_size, 2, cv2.LINE_AA)
-        
-        # Debug
+        cv2.drawMarker(bg_frame, cursor_pos, cursor_color, cv2.MARKER_CROSS, marker_size, 2, cv2.LINE_AA)
+
         if debug_enabled:
             debug_info = [
                 f"Modo: {'Raton' if use_mouse else 'Mano'}",
-                f"Posicion: {current_cursor}",
+                f"Posicion: {cursor_pos}",
                 f"Click detectado: {click_detected}",
                 f"Contacto activo: {click_active}",
                 f"Ultimo clic: {time.time() - last_click_time:.2f}s",
                 f"Arrastrando: {dragging_volume}"
             ]
-            
-            if hand_results and hand_results.multi_hand_landmarks:
-                hand = hand_results.multi_hand_landmarks[0]
-                idx = mp_hands.HandLandmark.INDEX_FINGER_TIP
-                thumb = mp_hands.HandLandmark.THUMB_TIP
-                idx_x = hand.landmark[idx].x
-                idx_y = hand.landmark[idx].y
-                thumb_x = hand.landmark[thumb].x
-                thumb_y = hand.landmark[thumb].y
-                distance = np.hypot(idx_x - thumb_x, idx_y - thumb_y)
-            
             y_offset = 50
             for line in debug_info:
-                cv2.putText(bg_frame, line, (20, y_offset), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(bg_frame, line, (20, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 y_offset += 30
-    
-    # Manejar interacciones
+
+    # Manejar interacciones de click
     if current_click:
         handle_clicks()
         play_click_sound()
-        # Resetear estados de clic inmediatamente después de procesar
+        # Resetear estado de click
         if use_mouse:
             mouse_click = False
         else:
             click_detected = False
-    
-    # Actualización continua durante arrastre
+
+    # Actualizar volumen mientras se arrastra el slider
     if dragging_volume:
         handle_clicks()
-    
-    # Teclado
+
+    # Manejo de teclado
     key = cv2.waitKey(max(1, frame_delay))
     if key == 27:  # ESC
         break
@@ -545,9 +602,10 @@ while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
         music_volume = max(0.0, music_volume - 0.05)
         pygame.mixer.music.set_volume(music_volume)
         build_menu_cache()
-    
+
+    # Mostrar el frame resultante
     cv2.imshow(WINDOW_NAME, bg_frame)
 
-# Limpieza
+# Limpieza final
 cap.release()
 cv2.destroyAllWindows()
