@@ -29,7 +29,6 @@ dragging_volume = False
 selected_version = "Pong 2"
 use_mouse = True
 last_click_time = 0
-DEBOUNCE_TIME = 0.15 #300ms
 click_active = False
 last_mouse_click = False
 click_processed = False
@@ -191,66 +190,6 @@ def setup_background_music():
         pygame.mixer.music.set_volume(music_volume)
         pygame.mixer.music.play(-1)
 
-# --- Callback de ratón ---
-def mouse_callback(event, x, y, flags, param):
-    global cursor_pos, mouse_click, use_mouse, dragging_volume
-    use_mouse = True
-    cursor_pos = (x, y)
-    if event == cv2.EVENT_LBUTTONDOWN:
-        mouse_click = True
-        # Verificar si se hizo clic en el slider
-        (x1, y1), (x2, y2) = button_coords['settings']['volume']
-        if x1 <= x <= x2 and y1 <= y <= y2:
-            dragging_volume = True
-    elif event == cv2.EVENT_LBUTTONUP:
-        mouse_click = False
-        dragging_volume = False
-    elif event == cv2.EVENT_MOUSEMOVE and dragging_volume:
-        # Actualizar volumen durante el arrastre
-        handle_clicks()
-
-cv2.setMouseCallback(WINDOW_NAME, mouse_callback)
-
-# --- Sistema de caché de menús ---
-button_coords = {}
-for menu_type in ['main', 'settings']:
-    button_coords[menu_type] = {}
-    for btn, coords in button_layout[menu_type].items():
-        x1 = int(coords[0] * screen_width)
-        y1 = int(coords[1] * screen_height)
-        x2 = int(coords[2] * screen_width)
-        y2 = int(coords[3] * screen_height)
-        button_coords[menu_type][btn] = ((x1, y1), (x2, y2))
-
-def build_menu_cache():
-    global selected_version, debug_enabled, rectangle_enabled
-    for menu_type in ['main', 'settings']:
-        overlay = np.zeros((screen_height, screen_width, 4), dtype=np.uint8)
-        if menu_type == 'main':
-            draw_main_menu(overlay)
-        else:
-            temp_version = selected_version
-            temp_debug = debug_enabled
-            temp_rect = rectangle_enabled
-            draw_settings_menu(overlay)
-            selected_version = temp_version
-            debug_enabled = temp_debug
-            rectangle_enabled = temp_rect
-        menu_cache[menu_type] = overlay
-
-# --- Funciones de dibujo ---
-def draw_button(frame, text, position, checked=False):
-    (x1, y1), (x2, y2) = position
-    cv2.rectangle(frame, (x1, y1), (x2, y2), (30, 30, 30, 200), -1)
-    border_color = (0, 255, 0) if checked else (255, 255, 255)
-    cv2.rectangle(frame, (x1, y1), (x2, y2), border_color, 2)
-    text_scale = 0.8 if (x2 - x1) > 500 else 0.5
-    thickness = 2 if (x2 - x1) > 500 else 1
-    text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, text_scale, thickness)
-    tx = x1 + ((x2 - x1) - text_size[0][0]) // 2
-    ty = y1 + ((y2 - y1) + text_size[0][1]) // 2
-    cv2.putText(frame, text, (tx, ty), cv2.FONT_HERSHEY_DUPLEX, text_scale, (255, 255, 0), thickness)
-
 def draw_main_menu(frame):
     cv2.putText(frame, "PONG AR", (int(screen_width*0.15), int(screen_height*0.1)),
                 cv2.FONT_HERSHEY_DUPLEX, 1.2, (255, 255, 0), 3)
@@ -285,11 +224,142 @@ def draw_settings_menu(frame):
     cv2.putText(frame, f"Volumen: {int(music_volume*100)}%", 
                 (x1 + 10, y1 + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
+def build_menu_cache():
+    global selected_version, debug_enabled, rectangle_enabled
+    for menu_type in ['main', 'settings']:
+        overlay = np.zeros((screen_height, screen_width, 4), dtype=np.uint8)
+        if menu_type == 'main':
+            draw_main_menu(overlay)
+        else:
+            temp_version = selected_version
+            temp_debug = debug_enabled
+            temp_rect = rectangle_enabled
+            draw_settings_menu(overlay)
+            selected_version = temp_version
+            debug_enabled = temp_debug
+            rectangle_enabled = temp_rect
+        menu_cache[menu_type] = overlay
+
+# --- Manejo de interacciones ---
+def handle_clicks():
+    global current_menu, selected_version, debug_enabled, rectangle_enabled, music_volume, click_processed, dragging_volume
+    
+    x, y = cursor_pos
+    menu_type = 'main' if current_menu == 0 else 'settings'
+
+    # Manejar slider de volumen (prioridad máxima)
+    if dragging_volume and current_menu == 1:
+        x, y = cursor_pos
+        (x1, y1), (x2, y2) = button_coords['settings']['volume']
+        if x1 <= x <= x2 and y1 <= y <= y2:
+            slider_width = x2 - x1
+            new_volume = (x - x1) / slider_width
+            music_volume = max(0.0, min(1.0, new_volume))
+            pygame.mixer.music.set_volume(music_volume)
+            build_menu_cache()
+            return  # Salir inmediatamente después de actualizar
+
+    # Procesar otros botones
+    for button_name in button_layout[menu_type]:
+        (x1, y1), (x2, y2) = button_coords[menu_type][button_name]
+        if x1 <= x <= x2 and y1 <= y <= y2:
+            if current_menu == 0:
+                # Lógica del menú principal
+                if button_name == 'play':
+                    venv_dir = os.path.join(os.path.dirname(__file__), "pong_venv")
+                    python_path = os.path.join(venv_dir, "Scripts", "python.exe") if os.name == 'nt' else os.path.join(venv_dir, "bin", "python")
+                    script = PONG2 if selected_version == "Pong 2" else PONGRETRO
+                    args = [python_path, script, "--music-volume", str(music_volume)]
+                    if debug_enabled: args.append("--debug")
+                    if rectangle_enabled: args.append("--rectangles")
+                    
+                    cap.release()
+                    cv2.destroyAllWindows()
+                    subprocess.Popen(args)
+                    os._exit(0)
+                    
+                elif button_name == 'settings':
+                    current_menu = 1
+                elif button_name == 'exit':
+                    cap.release()
+                    cv2.destroyAllWindows()
+                    os._exit(0)
+                    
+            else:  # Menú de ajustes
+                if button_name == 'pong2':
+                    selected_version = "Pong 2"
+                elif button_name == 'retro':
+                    selected_version = "retro"
+                elif button_name == 'debug':
+                    debug_enabled = not debug_enabled
+                elif button_name == 'rectangles':
+                    rectangle_enabled = not rectangle_enabled
+                elif button_name == 'back':
+                    current_menu = 0
+
+            build_menu_cache()
+            break  # Procesar solo un botón por clic
+    
+    # Marcar como procesado excepto para arrastre de volumen
+    if not dragging_volume:
+        click_processed = True
+
+# --- Callback de ratón ---
+def mouse_callback(event, x, y, flags, param):
+    global cursor_pos, mouse_click, use_mouse, dragging_volume, click_processed, last_mouse_click
+    use_mouse = True
+    cursor_pos = (x, y)
+    
+    if event == cv2.EVENT_LBUTTONDOWN:
+        if not last_mouse_click:
+            mouse_click = True
+            click_processed = False  # Reiniciar estado de procesado
+            # Verificar clic en slider solo si estamos en menú de ajustes
+            if current_menu == 1:
+                (x1, y1), (x2, y2) = button_coords['settings']['volume']
+                if x1 <= x <= x2 and y1 <= y <= y2:
+                    dragging_volume = True
+            last_mouse_click = True
+    elif event == cv2.EVENT_LBUTTONUP:
+        mouse_click = False
+        last_mouse_click = False
+        click_processed = False  # Permitir nuevo clic
+        dragging_volume = False
+    elif event == cv2.EVENT_MOUSEMOVE and dragging_volume:
+        # Actualizar volumen durante el arrastre (ignorar debounce)
+        handle_clicks()
+
+cv2.setMouseCallback(WINDOW_NAME, mouse_callback)
+
+# --- Sistema de caché de menús ---
+button_coords = {}
+for menu_type in ['main', 'settings']:
+    button_coords[menu_type] = {}
+    for btn, coords in button_layout[menu_type].items():
+        x1 = int(coords[0] * screen_width)
+        y1 = int(coords[1] * screen_height)
+        x2 = int(coords[2] * screen_width)
+        y2 = int(coords[3] * screen_height)
+        button_coords[menu_type][btn] = ((x1, y1), (x2, y2))
+
+# --- Funciones de dibujo ---
+def draw_button(frame, text, position, checked=False):
+    (x1, y1), (x2, y2) = position
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (30, 30, 30, 200), -1)
+    border_color = (0, 255, 0) if checked else (255, 255, 255)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), border_color, 2)
+    text_scale = 0.8 if (x2 - x1) > 500 else 0.5
+    thickness = 2 if (x2 - x1) > 500 else 1
+    text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, text_scale, thickness)
+    tx = x1 + ((x2 - x1) - text_size[0][0]) // 2
+    ty = y1 + ((y2 - y1) + text_size[0][1]) // 2
+    cv2.putText(frame, text, (tx, ty), cv2.FONT_HERSHEY_DUPLEX, text_scale, (255, 255, 0), thickness)
+
 build_menu_cache()
 
 # --- Detección de manos ---
 def async_hand_detection():
-    global cursor_pos, click_detected, hand_results, click_active, last_click_time, dragging_volume
+    global cursor_pos, click_detected, hand_results, click_active, last_click_time, dragging_volume, click_processed
     prev_pos = None
     SMOOTHING_FACTOR = 0.15
     CLICK_THRESHOLD = 0.07
@@ -336,14 +406,19 @@ def async_hand_detection():
             if distance < CLICK_THRESHOLD:
                 if not click_active:
                     click_active = True
-                    contact_start_time = current_time  # Registrar inicio de contacto
+                    contact_start_time = current_time
+                    click_processed = False  # Nuevo contacto, permitir procesar
                 else:
                     # Verificar tiempo de contacto y debounce
                     if (current_time - contact_start_time >= MIN_HOLD_TIME) and \
-                       (current_time - last_click_time >= DEBOUNCE_TIME):
+                       (current_time - last_click_time >= DEBOUNCE_TIME) and \
+                       not click_processed:
                         click_detected = True
                         last_click_time = current_time
+                        click_processed = True  # Marcar como procesado
             else:
+                if click_active:
+                    click_processed = True  # Forzar liberación completa
                 click_active = False
                 click_detected = False
             
@@ -363,6 +438,7 @@ def async_hand_detection():
             click_detected = False
             dragging_volume = False
             prev_pos = None
+            click_processed = True  # Bloquear hasta nuevo contacto
 
 threading.Thread(target=async_hand_detection, daemon=True).start()
 
@@ -372,63 +448,6 @@ def play_click_sound():
         channel = pygame.mixer.Channel(1)
         channel.set_volume(1.0, 1.0)
         channel.play(click_sound)
-
-# --- Manejo de interacciones ---
-def handle_clicks():
-    global current_menu, selected_version, debug_enabled, rectangle_enabled, music_volume
-    x, y = cursor_pos
-    menu_type = 'main' if current_menu == 0 else 'settings'
-
-    # Manejar slider de volumen si estamos en ajustes
-    if current_menu == 1:
-        (x1, y1), (x2, y2) = button_coords['settings']['volume']
-        if x1 <= x <= x2 and y1 <= y <= y2:
-            slider_width = x2 - x1
-            new_volume = (x - x1) / slider_width
-            music_volume = max(0.0, min(1.0, new_volume))
-            pygame.mixer.music.set_volume(music_volume)
-            build_menu_cache()
-            return  # Salir para evitar conflictos con otros botones
-    
-    for button_name in button_layout[menu_type]:
-        (x1, y1), (x2, y2) = button_coords[menu_type][button_name]
-        if x1 <= x <= x2 and y1 <= y <= y2:
-            if current_menu == 0:
-                if button_name == 'play':
-                    venv_dir = os.path.join(os.path.dirname(__file__), "pong_venv")
-                    if os.name == 'nt':
-                        python_path = os.path.join(venv_dir, "Scripts", "python.exe")
-                    else:
-                        python_path = os.path.join(venv_dir, "bin", "python")
-                    script = PONG2 if selected_version == "Pong 2" else PONGRETRO
-                    args = [python_path, script, "--music-volume", str(music_volume)]
-                    if debug_enabled: args.append("debug")
-                    if rectangle_enabled: args.append("rectangles")
-                    
-                    cap.release()
-                    cv2.destroyAllWindows()
-                    
-                    subprocess.Popen(args)
-                    os._exit(0)
-                elif button_name == 'settings':
-                    current_menu = 1
-                elif button_name == 'exit':
-                    cap.release()
-                    cv2.destroyAllWindows()
-                    os._exit(0)
-            else:
-                if button_name == 'pong2':
-                    selected_version = "Pong 2"
-                elif button_name == 'retro':
-                    selected_version = "retro"
-                elif button_name == 'debug':
-                    debug_enabled = not debug_enabled
-                elif button_name == 'rectangles':
-                    rectangle_enabled = not rectangle_enabled
-                elif button_name == 'back':
-                    current_menu = 0
-            build_menu_cache()
-            break
 
 try:
     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
@@ -502,6 +521,11 @@ while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
     if current_click:
         handle_clicks()
         play_click_sound()
+        # Resetear estados de clic inmediatamente después de procesar
+        if use_mouse:
+            mouse_click = False
+        else:
+            click_detected = False
     
     # Actualización continua durante arrastre
     if dragging_volume:
