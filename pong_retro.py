@@ -4,149 +4,209 @@ import numpy as np
 import pygame
 import os
 import time
-import subprocess
 import random
 import sys
+import subprocess
 import argparse
+from collections import deque
+from screeninfo import get_monitors
 
-# Inicializar pygame
 try:
     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
     print("pygame.mixer inicializado correctamente")
 except Exception as e:
     print(f"Error inicializando pygame.mixer: {e}")
 
-PONG = "assets/pong.mp3"
-WIN = "assets/win.mp3"
+pygame.mixer.music.set_volume(1.0)
 
-# Añade esto después de inicializar el mixer
-pygame.mixer.music.set_volume(1.0)  # Volumen global al máximo
+def load_icon(path, size=(40, 40)):
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        print(f"Error: no se pudo cargar {path}")
+        return None
+    img = cv2.resize(img, size, interpolation=cv2.INTER_AREA)
+    return img
 
-# Constantes del juego
-COUNT_DOWN_LEFT_HAND = 2
-COUNT_DOWN_RIGHT_HAND = 2
-RECTANGULO_WIDTH = 30
-RECTANGULO_HEIGHT = 90
-BALL_SIZE = 10
-MIN_SPEED = 5
-MAX_SPEED = 40
-BALL_COLOR_SPEED_FAST = (255, 0, 0)    # Rojo
-BALL_COLOR_SPEED_SLOW = (0, 0, 255)    # Azul
+icons = {
+    "shield": load_icon("assets/shield.png"),
+    "random": load_icon("assets/random.png"),
+    "extra ball": load_icon("assets/speed.png")
+}
 
-# Variables de pantalla
-WIDTH = 1280
-HEIGHT = 720
-POS_HORIZONTAL_IZQUIERDA = 0
-POS_HORIZONTAL_DERECHA = 0
-
-# Estado del juego
-paused = False
-
-# Variables para modos
-DEBUG_MODE = False
-RECTANGLE_MODE = False
-WIN_MODE = False
-MAX_POINTS_WIN_MODE = 15
-
-def close():
-    print("Closing game...")
-    cv2.destroyAllWindows()
-    pygame.quit()
-    sys.exit(0)
+def draw_paddles(frame):
+    screen_ratio = SCREEN_WIDTH / SCREEN_HEIGHT
+    original_ratio = WIDTH / HEIGHT
+    
+    if screen_ratio > original_ratio:
+        scaled_height = int(RECTANGULO_HEIGHT * SCREEN_HEIGHT / HEIGHT)
+        scaled_width = int(RECTANGULO_WIDTH * SCREEN_HEIGHT / HEIGHT)
+    else:
+        scaled_width = int(RECTANGULO_WIDTH * SCREEN_WIDTH / WIDTH)
+        scaled_height = int(RECTANGULO_HEIGHT * SCREEN_WIDTH / WIDTH)
+    
+    min_paddle_size = int(10 * min(SCREEN_WIDTH/WIDTH, SCREEN_HEIGHT/HEIGHT))
+    scaled_width = max(scaled_width, min_paddle_size)
+    scaled_height = max(scaled_height, min_paddle_size)
+    
+    # Paleta izquierda (posición dinámica)
+    left_y = left_paddle_y * (SCREEN_HEIGHT / HEIGHT)
+    left_y = max(0, min(left_y, SCREEN_HEIGHT - scaled_height))
+    cv2.rectangle(frame, (0, int(left_y)), 
+                 (scaled_width, int(left_y + scaled_height)), 
+                 (255, 255, 255), -1)
+    
+    # Paleta derecha (posición dinámica)
+    right_y = right_paddle_y * (SCREEN_HEIGHT / HEIGHT)
+    right_y = max(0, min(right_y, SCREEN_HEIGHT - scaled_height))
+    cv2.rectangle(frame, (SCREEN_WIDTH - scaled_width, int(right_y)),
+                 (SCREEN_WIDTH, int(right_y + scaled_height)), 
+                 (255, 255, 255), -1)
 
 def load_sound(filename):
-    if not os.path.exists(filename):
-        return None
-    sound = pygame.mixer.Sound(filename)
-    sound.set_volume(1.0)
-    return sound
+    return pygame.mixer.Sound(filename) if os.path.exists(filename) else None
 
-def reset_ball(direction):
-    global ballPosition, ballSpeedX, ballSpeedY, last_touched
-    
-    ballPosition = [WIDTH // 2, HEIGHT // 2]
-    ballSpeedX = MIN_SPEED * direction
-    ballSpeedY = MIN_SPEED * random.choice([-1, 1])
-    last_touched = None
-    time.sleep(1)
+pong_sound = load_sound("pong.mp3")
+win_sound = load_sound("win.mp3")
 
-def initialize_game():
-    global pong_sound, win_sound, countdown_sound
-    global left_paddle_y, right_paddle_y
-    global ballPosition, ballSpeedX, ballSpeedY
-    global left_score, right_score, last_touched
-    global hands, mp_hands, mp_drawing
-    global WIDTH, HEIGHT, POS_HORIZONTAL_IZQUIERDA, POS_HORIZONTAL_DERECHA
-    global RECTANGULO_HEIGHT, DEBUG_MODE, RECTANGLE_MODE
-    global MAX_POINTS_WIN_MODE, WIN_MODE
-    
-    # Verificar argumentos de lÃ­nea de comandos
-    args = [arg.lower() for arg in sys.argv[1:]]
-    DEBUG_MODE = "debug" in args
-    RECTANGLE_MODE = "rectangles" in args
-    WIN_MODE = "win" in args
+WIDTH = 640
+HEIGHT = 480
+WINDOW_NAME = "PONG 2"
+first_time = True
 
-    try:
-        screen_info = pygame.display.Info()
-        WIDTH = screen_info.current_w
-        HEIGHT = screen_info.current_h
-    except:
-        WIDTH = 1280
-        HEIGHT = 720
-    
-    WIDTH = max(WIDTH, 800)
-    HEIGHT = max(HEIGHT, 600)
-    
-    POS_HORIZONTAL_IZQUIERDA = int(WIDTH * 0.05)
-    POS_HORIZONTAL_DERECHA = int(WIDTH * 0.95)
-    RECTANGULO_HEIGHT = max(60, int(HEIGHT * 0.15))
-    
-    pong_sound = load_sound(PONG)
-    win_sound = load_sound(WIN)
-    #countdown_sound = load_sound("countdown.mp3")
-    
-    left_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
-    right_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
-    
-    reset_ball(direction=random.choice([-1, 1]))
-    
-    left_score = 0
-    right_score = 0
-    
-    mp_hands = mp.solutions.hands
-    hands = mp_hands.Hands(
-        max_num_hands=2,
-        min_detection_confidence=0.7,  # Aumentada para mayor precisión
-        min_tracking_confidence=0.7
-    )
-    mp_drawing = mp.solutions.drawing_utils
+RECTANGULO_WIDTH = 10
+RECTANGULO_HEIGHT = 90
 
-def reset_game():
-    global left_score, right_score, left_paddle_y, right_paddle_y
-    global ballPosition, ballSpeedX, ballSpeedY, last_touched
-    global COUNT_DOWN_LEFT_HAND, COUNT_DOWN_RIGHT_HAND, paused
-    
-    # Resetear marcadores
-    left_score = 0
-    right_score = 0
-    
-    # Resetear posición de las palas
-    left_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
-    right_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
-    
-    # Resetear pelota
-    reset_ball(direction=random.choice([-1, 1]))
-    
-    # Resetear temporizadores de manos
-    COUNT_DOWN_LEFT_HAND = 2
-    COUNT_DOWN_RIGHT_HAND = 2
-    paused = False
-    
-    # Reproducir sonido de reinicio si está disponible
-    if countdown_sound:
-        countdown_sound.play()
-    
-    print("Game has been reset")
+# Posiciones iniciales de las paletas
+left_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
+right_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
+
+BALL_SIZE = 10
+INITIAL_BALL_EXTRA_BALL = 3
+MAX_BALL_EXTRA_BALL = 15
+HAND_EXTRA_BALL_MULTIPLIER = 5
+
+# Variables globales inicializadas correctamente
+balls = [{
+    "pos": [WIDTH // 2, HEIGHT // 2],
+    "vx": random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
+    "vy": random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
+    "last_touched": None
+}]
+
+MAX_BALLS = 5
+left_score = 0
+right_score = 0
+last_touched = None
+
+shields = {
+    "left": False,
+    "right": False
+}
+
+powerups = []
+message_feed = []
+
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+mp_drawing = mp.solutions.drawing_utils
+
+last_detected_time = [0, 0]
+warning_shown = [False, False]
+game_active = False
+game_paused = False
+
+HISTORY_LENGTH = 5
+SMOOTHING_ALPHA = 0.3
+
+WARNING_TIME = 1.0
+PAUSE_TIME = 3.0
+
+POWERUP_RADIUS = 20
+POWERUP_TYPES = ["shield", "random", "extra ball"]
+POWERUP_INTERVAL = 8
+last_powerup_time = time.time()
+
+MESSAGE_DURATION = 3.0
+
+active_effects = {
+    "left": None,
+    "right": None
+}
+
+class HandTracker:
+    def __init__(self):
+        self.position_history = deque(maxlen=HISTORY_LENGTH)
+        self.smoothed_speed = [0, 0]
+        self.last_valid_position = None
+        self.last_valid_time = time.time()
+        self.hand_size = 50
+
+    def update(self, new_position):
+        current_time = time.time()
+        if new_position:
+            self.last_valid_position = new_position
+            self.last_valid_time = current_time
+            self.position_history.append((new_position, current_time))
+
+            if len(self.position_history) >= 2:
+                total_dx, total_dy, total_time = 0, 0, 0
+                for i in range(1, len(self.position_history)):
+                    prev_pos, prev_time = self.position_history[i-1]
+                    curr_pos, curr_time = self.position_history[i]
+                    total_dx += curr_pos[0] - prev_pos[0]
+                    total_dy += curr_pos[1] - prev_pos[1]
+                    total_time += curr_time - prev_time
+
+                if total_time > 0:
+                    avg_speed_x = total_dx / total_time
+                    avg_speed_y = total_dy / total_time
+                    self.smoothed_speed[0] = SMOOTHING_ALPHA * avg_speed_x + (1-SMOOTHING_ALPHA) * self.smoothed_speed[0]
+                    self.smoothed_speed[1] = SMOOTHING_ALPHA * avg_speed_y + (1-SMOOTHING_ALPHA) * self.smoothed_speed[1]
+
+        elif self.last_valid_position and (current_time - self.last_valid_time < 0.2):
+            dt = current_time - self.last_valid_time
+            estimated_x = self.last_valid_position[0] + self.smoothed_speed[0] * dt
+            estimated_y = self.last_valid_position[1] + self.smoothed_speed[1] * dt
+            return (estimated_x, estimated_y), self.smoothed_speed
+
+        return new_position, self.smoothed_speed if new_position else (None, [0, 0])
+
+hand_trackers = [HandTracker(), HandTracker()]
+
+class AudioSystem:
+    def __init__(self):
+        pygame.mixer.init()
+        self.sounds = {
+            "left": self._load_sound("pong.mpeg"),
+            "right": self._load_sound("pong.mpeg"),
+            "wall": self._load_sound("pong.mpeg"),
+            "score": self._load_sound("win.mp3"),
+            "start": self._load_sound("win.mp3")
+        }
+        self.channels = {
+            "left": pygame.mixer.Channel(0),
+            "right": pygame.mixer.Channel(1)
+        }
+
+    def _load_sound(self, path):
+        try:
+            return pygame.mixer.Sound(path)
+        except pygame.error as e:
+            print(f"Error cargando {path}: {e}")
+            return None
+
+    def play(self, sound_name):
+        if sound_name in self.sounds and self.sounds[sound_name]:
+            if sound_name == "left":
+                self.channels["left"].play(self.sounds[sound_name])
+                self.channels["left"].set_volume(1.0, 0.0)
+            elif sound_name == "right":
+                self.channels["right"].play(self.sounds[sound_name])
+                self.channels["right"].set_volume(0.0, 1.0)
+            else:
+                self.sounds[sound_name].play()
+
+audio_system = AudioSystem()
 
 def get_hand_rect(hand_landmarks):
     x_coords = [lm.x * WIDTH for lm in hand_landmarks.landmark]
@@ -155,221 +215,352 @@ def get_hand_rect(hand_landmarks):
     min_y, max_y = int(min(y_coords)), int(max(y_coords))
     return (min_x, min_y), (max_x, max_y)
 
-def draw_rectangle_hands(frame, hand_data):
-    if not RECTANGLE_MODE:
-        return
-    
-    try:
-        for hand_label, rect in hand_data:
-            color = (0, 255, 0)
-            thickness = max(2, int(min(WIDTH, HEIGHT) * 0.003))
-            
-            # Dibujar rectángulo alrededor de la mano
-            cv2.rectangle(frame, rect[0], rect[1], color, thickness)
-            
-            # Dibujar etiqueta de la mano
-            font_scale = max(0.5, min(WIDTH, HEIGHT) / 1000)
-            thickness_text = max(1, int(font_scale * 2))
-            
-            label_text = f"{hand_label} Hand"
-            cv2.putText(frame, label_text,
-                       (rect[0][0], rect[0][1] - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness_text)
-    except Exception as e:
-        print(f"Error drawing hand rectangles: {e}")
+def add_powerup_message(player_label, powerup_type):
+    text = f"{player_label.capitalize()} got {powerup_type.upper()}!" if player_label != "SYSTEM" else powerup_type
+    message_feed.append({"text": text, "start_time": time.time()})
 
-def process_hands(results):
-    global left_paddle_y, right_paddle_y, paused
-    global COUNT_DOWN_LEFT_HAND, COUNT_DOWN_RIGHT_HAND
-    
-    hand_data = []
-    left_hand_detected = False
-    right_hand_detected = False
+def draw_powerup_feed(frame):
+    current_time = time.time()
+    message_feed[:] = [m for m in message_feed if current_time - m["start_time"] < MESSAGE_DURATION]
 
-    if results.multi_hand_landmarks:
-        hands_info = []
-        for landmarks in results.multi_hand_landmarks:
-            rect = get_hand_rect(landmarks)
-            center_x = (rect[0][0] + rect[1][0]) // 2
-            hands_info.append((center_x, rect))
-        
-        # Ordenar las manos por posición horizontal
-        hands_info.sort(key=lambda x: x[0])
-        
-        # Asignar etiquetas basadas en posición real en pantalla
-        left_hand_assigned = False
-        right_hand_assigned = False
-        
-        for (center_x, rect) in hands_info:
-            # Determinar si la mano está en la mitad izquierda de la pantalla
-            if center_x < WIDTH / 2 and not left_hand_assigned:
-                hand_label = 'Left'
-                left_hand_assigned = True
-            # Determinar si la mano está en la mitad derecha
-            elif center_x >= WIDTH / 2 and not right_hand_assigned:
-                hand_label = 'Right'
-                right_hand_assigned = True
-            else:
-                continue  # Ignorar manos adicionales
-            
-            hand_data.append((hand_label, rect))
-            
-            center_y = (rect[0][1] + rect[1][1]) // 2
-            if hand_label == 'Left':
-                left_hand_detected = True
-                left_paddle_y = max(0, min(HEIGHT - RECTANGULO_HEIGHT, center_y - RECTANGULO_HEIGHT // 2))
-            elif hand_label == 'Right':
-                right_hand_detected = True
-                right_paddle_y = max(0, min(HEIGHT - RECTANGULO_HEIGHT, center_y - RECTANGULO_HEIGHT // 2))
+    font_scale = SCREEN_WIDTH / 1600
+    thickness = int(2 * SCREEN_WIDTH / 800)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    color = (0, 255, 255)
 
-    # Actualizar contadores de detección con umbral más sensible
-    if not left_hand_detected:
-        COUNT_DOWN_LEFT_HAND = max(0, COUNT_DOWN_LEFT_HAND - 1/20)  # Decremento más rápido (1 segundo para llegar a 0)
-    else:
-        COUNT_DOWN_LEFT_HAND = min(2, COUNT_DOWN_LEFT_HAND + 1/10)  # Recuperación más lenta
-    
-    if not right_hand_detected:
-        COUNT_DOWN_RIGHT_HAND = max(0, COUNT_DOWN_RIGHT_HAND - 1/20)
-    else:
-        COUNT_DOWN_RIGHT_HAND = min(2, COUNT_DOWN_RIGHT_HAND + 1/10)
-    
-    # Determinar estado de pausa
-    paused = COUNT_DOWN_LEFT_HAND <= 0 or COUNT_DOWN_RIGHT_HAND <= 0
-    
-    # Debug: Mostrar valores de los contadores
-    print(f"Left Hand Timer: {COUNT_DOWN_LEFT_HAND:.1f} | Right Hand Timer: {COUNT_DOWN_RIGHT_HAND:.1f} | Paused: {paused}")
-    
-    return hand_data, left_hand_detected, right_hand_detected
+    base_y = int(50 * SCREEN_HEIGHT / HEIGHT)
+    line_spacing = int(40 * SCREEN_HEIGHT / HEIGHT)
 
-def get_ball_color():
-    # Calcular la velocidad actual de la pelota
-    current_speed = np.sqrt(ballSpeedX**2 + ballSpeedY**2)
-    
-    # Normalizar la velocidad entre 0 y 1 (MIN_SPEED a MAX_SPEED)
-    normalized_speed = (current_speed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)
-    normalized_speed = max(0, min(1, normalized_speed))  # Asegurar que está en el rango [0,1]
-    
-    # Interpolar linealmente entre los colores
-    red = int(BALL_COLOR_SPEED_SLOW[0] * (1 - normalized_speed) + BALL_COLOR_SPEED_FAST[0] * normalized_speed)
-    green = int(BALL_COLOR_SPEED_SLOW[1] * (1 - normalized_speed) + BALL_COLOR_SPEED_FAST[1] * normalized_speed)
-    blue = int(BALL_COLOR_SPEED_SLOW[2] * (1 - normalized_speed) + BALL_COLOR_SPEED_FAST[2] * normalized_speed)
-    
-    return (blue, green, red)  # OpenCV usa BGR en lugar de RGB
-
-def draw_ball(frame):
-    try:
-        x, y = int(ballPosition[0]), int(ballPosition[1])
-        ball_size = max(5, int(min(WIDTH, HEIGHT) * 0.015))
-        ball_color = get_ball_color()
-        cv2.circle(frame, (x, y), ball_size, ball_color, -1)
-    except Exception as e:
-        print(f"Error drawing ball: {e}")
-
-def draw_middle_line(frame):
-    try:
-        line_thickness = max(1, int(min(WIDTH, HEIGHT) * 0.003))
-        dash_length = max(5, int(HEIGHT * 0.03))
-        gap_length = max(3, int(HEIGHT * 0.02))
-        
-        step = dash_length + gap_length
-        if step <= 0:
-            step = 10
-            
-        for y in range(0, HEIGHT, step):
-            cv2.line(frame, (WIDTH // 2, y), (WIDTH // 2, y + dash_length), 
-                    (255, 255, 255), line_thickness)
-    except Exception as e:
-        print(f"Error drawing middle line: {e}")
-
-def draw_paddles(frame):
-    try:
-        paddle_width = max(10, int(WIDTH * 0.015))
-        
-        cv2.rectangle(frame, 
-                     (POS_HORIZONTAL_IZQUIERDA - paddle_width // 2, left_paddle_y),
-                     (POS_HORIZONTAL_IZQUIERDA + paddle_width // 2, left_paddle_y + RECTANGULO_HEIGHT),
-                     (255, 255, 255), -1)
-        
-        cv2.rectangle(frame, 
-                     (POS_HORIZONTAL_DERECHA - paddle_width // 2, right_paddle_y),
-                     (POS_HORIZONTAL_DERECHA + paddle_width // 2, right_paddle_y + RECTANGULO_HEIGHT),
-                     (255, 255, 255), -1)
-    except Exception as e:
-        print(f"Error drawing palettes: {e}")
-
-def draw_score(frame):
-    try:
-        font_scale = max(0.5, min(WIDTH, HEIGHT) / 1000)
-        thickness = max(1, int(font_scale * 2))
-        
-        # Dibujar marcador izquierdo
-        left_text = f"Left: {left_score}"
-        left_size = cv2.getTextSize(left_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
-        left_pos = (int(WIDTH * 0.1), int(HEIGHT * 0.1))
-        cv2.putText(frame, left_text, left_pos, 
-                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
-        
-        # Mensaje de mano izquierda no detectada (siempre visible si hay problema)
-        if COUNT_DOWN_LEFT_HAND < 2:  # Eliminamos la condición "and not paused"
-            warning_text = "Left hand not detected!"
-            warning_size = cv2.getTextSize(warning_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, thickness)[0]
-            cv2.putText(frame, warning_text,
-                       (left_pos[0], left_pos[1] + left_size[1] + 15),
-                       cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, (0, 0, 255), thickness)
-        
-        # Dibujar marcador derecho
-        right_text = f"Right: {right_score}"
-        right_size = cv2.getTextSize(right_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
-        right_pos = (int(WIDTH * 0.7), int(HEIGHT * 0.1))
-        cv2.putText(frame, right_text, right_pos, 
-                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
-        
-        # Mensaje de mano derecha no detectada (siempre visible si hay problema)
-        if COUNT_DOWN_RIGHT_HAND < 2:  # Eliminamos la condición "and not paused"
-            warning_text = "Right hand not detected!"
-            warning_size = cv2.getTextSize(warning_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, thickness)[0]
-            cv2.putText(frame, warning_text,
-                       (right_pos[0], right_pos[1] + right_size[1] + 15),
-                       cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, (0, 0, 255), thickness)
-            
-    except Exception as e:
-        print(f"Error drawing marker: {e}")
+    for idx, msg in enumerate(message_feed):
+        text_size = cv2.getTextSize(msg["text"], font, font_scale, thickness)[0]
+        text_x = (SCREEN_WIDTH - text_size[0]) // 2
+        text_y = base_y + idx * line_spacing
+        cv2.putText(frame, msg["text"], (text_x, text_y), font, font_scale, color, thickness)
 
 def draw_shadow(frame):
     try:
         overlay = frame.copy()
-        cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
+        cv2.rectangle(overlay, (0, 0), (SCREEN_WIDTH, SCREEN_HEIGHT), (0, 0, 0), -1)
         alpha = 0.7
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
     except Exception as e:
         print(f"Error drawing shadow: {e}")
 
+def process_hands(results):
+    global last_detected_time, warning_shown, game_active, game_paused, left_paddle_y, right_paddle_y
+
+    hand_data = []
+    current_time = time.time()
+    hands_detected = [False, False]
+    middle_line = WIDTH // 2
+
+    if results.multi_hand_landmarks:
+        for landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
+            wrist_x = landmarks.landmark[mp_hands.HandLandmark.WRIST].x * WIDTH
+            wrist_y = landmarks.landmark[mp_hands.HandLandmark.WRIST].y * HEIGHT
+
+            if wrist_x < middle_line:
+                label = "left"
+                tracker_index = 0
+            else:
+                label = "right"
+                tracker_index = 1
+
+            rect = get_hand_rect(landmarks)
+            center = ((rect[0][0] + rect[1][0]) / 2, (rect[0][1] + rect[1][1]) / 2)
+
+            estimated_pos, speed = hand_trackers[tracker_index].update(center)
+
+            if estimated_pos:
+                if center is None:
+                    estimated_pos = hand_trackers[tracker_index].last_valid_position
+
+                hand_size = hand_trackers[tracker_index].hand_size
+                min_x = int(estimated_pos[0] - hand_size)
+                max_x = int(estimated_pos[0] + hand_size)
+                min_y = int(estimated_pos[1] - hand_size)
+                max_y = int(estimated_pos[1] + hand_size)
+
+                hand_data.append((label, ((min_x, min_y), (max_x, max_y)), hand_trackers[tracker_index]))
+                hands_detected[tracker_index] = True
+                last_detected_time[tracker_index] = current_time
+
+                # Actualizar posición de la paleta correspondiente
+                hand_center_y = (min_y + max_y) // 2
+                new_paddle_y = hand_center_y - RECTANGULO_HEIGHT // 2
+                new_paddle_y = max(0, min(new_paddle_y, HEIGHT - RECTANGULO_HEIGHT))
+
+                if label == "left":
+                    left_paddle_y = new_paddle_y
+                else:
+                    right_paddle_y = new_paddle_y
+
+                if warning_shown[tracker_index]:
+                    warning_shown[tracker_index] = False
+
+    for i in range(2):
+        time_since_last_detection = current_time - last_detected_time[i]
+
+        if not hands_detected[i] and last_detected_time[i] > 0:
+            if time_since_last_detection > WARNING_TIME and not warning_shown[i]:
+                warning_shown[i] = True
+
+            if time_since_last_detection > PAUSE_TIME:
+                game_paused = True
+
+    if all(hands_detected) and (not game_active or game_paused):
+        game_active = True
+        game_paused = False
+        for i in range(2):
+            warning_shown[i] = False
+
+    return hand_data
+
+def draw_ball(frame, speed):
+    for ball in balls:
+        center = scale_coords(int(round(ball["pos"][0])), int(round(ball["pos"][1])))
+        scaled_size = int(BALL_SIZE * min(SCREEN_WIDTH/WIDTH, SCREEN_HEIGHT/HEIGHT))
+        norm_speed = min(np.sqrt(ball["vx"]**2 + ball["vy"]**2) / MAX_BALL_EXTRA_BALL, 1.0)
+        color = (int(255 * (1 - norm_speed)), int(255 * (1 - norm_speed)), int(255 * norm_speed))
+        cv2.circle(frame, center, scaled_size, color, -1)
+
+def draw_shields(frame):
+    thickness = int(10 * SCREEN_WIDTH / WIDTH)
+    color = (0, 255, 255)
+
+    if shields["left"]:
+        start = scale_coords(2.5, 0)
+        end = scale_coords(2.5, HEIGHT)
+        cv2.line(frame, start, end, color, thickness)
+
+    if shields["right"]:
+        start = scale_coords(WIDTH - 2.5, 0)
+        end = scale_coords(WIDTH - 2.5, HEIGHT)
+        cv2.line(frame, start, end, color, thickness)
+
+def draw_middle_line(frame):
+    line_thickness = int(2 * min(SCREEN_WIDTH/WIDTH, SCREEN_HEIGHT/HEIGHT))
+    segment_length = int(20 * SCREEN_HEIGHT/HEIGHT)
+    gap = int(10 * SCREEN_HEIGHT/HEIGHT)
+
+    for y in range(0, SCREEN_HEIGHT, segment_length + gap):
+        start_point = scale_coords(WIDTH // 2, y)
+        end_point = scale_coords(WIDTH // 2, y + segment_length)
+        if (y // gap) % 2 == 0:
+            cv2.line(frame, start_point, end_point, (255, 255, 255), line_thickness)
+
+def reset_ball(ball=None, vx=None, vy=None):
+    if ball is None:
+        ball = {
+            "pos": [WIDTH // 2, HEIGHT // 2],
+            "vx": vx if vx is not None else random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
+            "vy": vy if vy is not None else random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
+            "last_touched": None
+        }
+        balls.append(ball)
+    else:
+        ball["pos"] = [WIDTH // 2, HEIGHT // 2]
+        ball["vx"] = vx if vx is not None else random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL
+        ball["vy"] = vy if vy is not None else random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL
+        ball["last_touched"] = None
+
+def update_all_balls(hand_data):
+    global left_score, right_score, last_touched
+
+    if game_paused or not game_active:
+        return 0
+
+    speeds = []
+
+    for ball in balls[:]:
+        pos = ball["pos"]
+        vx = ball["vx"]
+        vy = ball["vy"]
+
+        next_x = pos[0] + vx
+        next_y = pos[1] + vy
+
+        # Rebote con los bordes superior e inferior
+        if next_y <= 0 or next_y >= HEIGHT:
+            vy = -vy
+            if audio_system:
+                audio_system.play("wall")
+
+        collision = False
+        
+        # Colisión con las paletas (rectángulos blancos)
+        # Paleta izquierda
+        if (pos[0] - BALL_SIZE <= RECTANGULO_WIDTH and 
+            left_paddle_y <= pos[1] <= left_paddle_y + RECTANGULO_HEIGHT):
+            # Asegurar que la bola no se quede atrapada dentro de la paleta
+            pos[0] = RECTANGULO_WIDTH + BALL_SIZE
+            vx = abs(vx) * 1.1  # Invertir dirección X y aumentar velocidad
+            vy = vy * 1.05  # Aumentar ligeramente la velocidad Y
+            ball["last_touched"] = "left"
+            if audio_system:
+                audio_system.play("left")
+            collision = True
+        
+        # Paleta derecha
+        elif (pos[0] + BALL_SIZE >= WIDTH - RECTANGULO_WIDTH and 
+              right_paddle_y <= pos[1] <= right_paddle_y + RECTANGULO_HEIGHT):
+            # Asegurar que la bola no se quede atrapada dentro de la paleta
+            pos[0] = WIDTH - RECTANGULO_WIDTH - BALL_SIZE
+            vx = -abs(vx) * 1.1  # Invertir dirección X y aumentar velocidad
+            vy = vy * 1.05  # Aumentar ligeramente la velocidad Y
+            ball["last_touched"] = "right"
+            if audio_system:
+                audio_system.play("right")
+            collision = True
+
+        # Lógica de powerups (mantenemos esta parte)
+        for label, ((min_x, min_y), (max_x, max_y)), _ in hand_data:
+            for p in powerups[:]:  # Usamos una copia para poder modificarla durante la iteración
+                if min_x < p["x"] < max_x and min_y < p["y"] < max_y:
+                    powerup_type = p["type"]
+                    powerups.remove(p)
+                    add_powerup_message(label, powerup_type)
+
+                    if powerup_type == "shield":
+                        shields[label] = True
+                    elif powerup_type == "random":
+                        RANDOM_OFFSET_X = 40
+                        for b in balls:
+                            y = b["pos"][1]
+                            if label == "left":
+                                b["pos"][0] = WIDTH // 2 + RANDOM_OFFSET_X
+                                b["vx"] = abs(b["vx"]) if b["vx"] is not None else INITIAL_BALL_EXTRA_BALL
+                            else:
+                                b["pos"][0] = WIDTH // 2 - RANDOM_OFFSET_X
+                                b["vx"] = -abs(b["vx"]) if b["vx"] is not None else -INITIAL_BALL_EXTRA_BALL
+                            b["vy"] = random.choice([-1, 1]) * random.uniform(2, 4)
+                            b["last_touched"] = None
+
+                    elif powerup_type == "extra ball":
+                        if len(balls) < MAX_BALLS:
+                            reset_ball()
+                        elif len(balls) == MAX_BALLS:
+                            add_powerup_message("SYSTEM", "MAXIMUM RANDOM")
+
+        # Actualizar posición de la bola
+        pos[0] = int(round(pos[0] + vx))
+        pos[1] = int(round(pos[1] + vy))
+
+        # Lógica de puntuación y escudos
+        if pos[0] <= 0:
+            if shields["left"]:
+                shields["left"] = False
+                pos[0] = 10
+                ball["vx"] = abs(ball["vx"])
+                if audio_system:
+                    audio_system.play("wall")
+            else:
+                right_score += 1
+                balls.remove(ball)
+                if len(balls) == 0:
+                    reset_ball()
+                if audio_system:
+                    audio_system.play("score")
+
+        elif pos[0] >= WIDTH:
+            if shields["right"]:
+                shields["right"] = False
+                pos[0] = WIDTH - 10
+                ball["vx"] = -abs(ball["vx"])
+                if audio_system:
+                    audio_system.play("wall")
+            else:
+                left_score += 1
+                balls.remove(ball)
+                if len(balls) == 0:
+                    reset_ball()
+                if audio_system:
+                    audio_system.play("score")
+
+        else:
+            ball["vx"], ball["vy"] = vx, vy
+            speeds.append(np.sqrt(vx**2 + vy**2))
+
+    return max(speeds) if speeds else 0
+
+def draw_score(frame):
+    global left_pos, left_size, right_pos, right_size  # Add these global variables
+    
+    try:
+        font_scale = max(0.5, min(SCREEN_WIDTH, SCREEN_HEIGHT) / 1000)
+        thickness = max(1, int(font_scale * 2))
+        
+        left_text = f"Left: {left_score}"
+        left_pos = scale_coords(50, 50)
+        left_size = cv2.getTextSize(left_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
+        cv2.putText(frame, left_text, left_pos, 
+                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+        
+        right_text = f"Right: {right_score}"
+        right_pos = scale_coords(WIDTH - 200, 50)
+        right_size = cv2.getTextSize(right_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
+        cv2.putText(frame, right_text, right_pos, 
+                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+            
+    except Exception as e:
+        print(f"Error drawing marker: {e}")
+
+def draw_warnings(frame):
+    try:
+        font_scale = max(0.5, min(SCREEN_WIDTH, SCREEN_HEIGHT) / 1000)
+        thickness = max(1, int(font_scale * 2))
+        
+        if warning_shown[0]:
+            warning_text = "Left hand not detected!"
+            warning_size = cv2.getTextSize(warning_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, thickness)[0]
+            warning_pos = (left_pos[0], left_pos[1] + left_size[1] + int(15 * SCREEN_HEIGHT/HEIGHT))
+            cv2.putText(frame, warning_text, warning_pos,
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, (0, 0, 255), thickness)
+        
+        if warning_shown[1]:
+            warning_text = "Right hand not detected!"
+            warning_size = cv2.getTextSize(warning_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, thickness)[0]
+            warning_pos = (right_pos[0], right_pos[1] + right_size[1] + int(15 * SCREEN_HEIGHT/HEIGHT))
+            cv2.putText(frame, warning_text, warning_pos,
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale*0.8, (0, 0, 255), thickness)
+            
+    except Exception as e:
+        print(f"Error drawing warnings: {e}")
+
+def draw_game_status(frame, hand_data):
+    for label, ((min_x, min_y), (max_x, max_y)), _ in hand_data:
+        scaled_min = scale_coords(min_x, min_y)
+        scaled_max = scale_coords(max_x, max_y)
+        cv2.rectangle(frame, scaled_min, scaled_max, (0, 255, 255), 1)
+
+        text_pos = scale_coords(min_x + 5, min_y + 20)
+        cv2.putText(frame, str(label), text_pos,
+                    cv2.FONT_HERSHEY_SIMPLEX, SCREEN_WIDTH/1600,
+                    (0, 255, 255), int(2 * SCREEN_WIDTH/800))
+
 def draw_pause_message(frame):
     try:
-        # Solo dibujar el overlay oscuro si está en pausa
-        if paused:
+        if game_paused:
             overlay = frame.copy()
-            cv2.rectangle(overlay, (0, 0), (WIDTH, HEIGHT), (0, 0, 0), -1)
-            alpha = 0.3  # Reducimos la opacidad para que se vean mejor los otros mensajes
+            cv2.rectangle(overlay, (0, 0), (SCREEN_WIDTH, SCREEN_HEIGHT), (0, 0, 0), -1)
+            alpha = 0.3
             cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
             
-            # Mensaje principal de pausa
-            font_scale = max(0.8, min(WIDTH, HEIGHT) / 800)
+            font_scale = max(0.8, min(SCREEN_WIDTH, SCREEN_HEIGHT) / 800)
             thickness = max(2, int(font_scale * 2))
             
             pause_text = "GAME PAUSED"
             text_size = cv2.getTextSize(pause_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
             cv2.putText(frame, pause_text,
-                       (WIDTH // 2 - text_size[0] // 2, HEIGHT // 2 - 50),
+                       (SCREEN_WIDTH // 2 - text_size[0] // 2, SCREEN_HEIGHT // 2 - 50),
                        cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), thickness)
             
             continue_text = "Show both hands to continue"
             continue_size = cv2.getTextSize(continue_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale-0.2, thickness-1)[0]
             cv2.putText(frame, continue_text,
-                       (WIDTH // 2 - continue_size[0] // 2, HEIGHT // 2 + 20),
+                       (SCREEN_WIDTH // 2 - continue_size[0] // 2, SCREEN_HEIGHT // 2 + 20),
                        cv2.FONT_HERSHEY_SIMPLEX, font_scale-0.2, (255, 255, 255), thickness-1)
             
-            # Añadir instrucciones de teclado
             instructions = [
                 "'Q' --> Go to menu",
                 "'ESC' --> Close game",
@@ -379,20 +570,13 @@ def draw_pause_message(frame):
             instruction_font_scale = font_scale - 0.3
             instruction_thickness = thickness - 1
             
-            # Calcular la posición inicial para las instrucciones
-            total_instructions_height = 0
-            for instruction in instructions:
-                text_size = cv2.getTextSize(instruction, cv2.FONT_HERSHEY_SIMPLEX, 
-                                          instruction_font_scale, instruction_thickness)[0]
-                total_instructions_height += text_size[1] + 10
-            
-            start_y = HEIGHT // 2 + 80
+            start_y = SCREEN_HEIGHT // 2 + 80
             
             for i, instruction in enumerate(instructions):
                 text_size = cv2.getTextSize(instruction, cv2.FONT_HERSHEY_SIMPLEX, 
                                           instruction_font_scale, instruction_thickness)[0]
                 cv2.putText(frame, instruction,
-                           (WIDTH // 2 - text_size[0] // 2, start_y + i * (text_size[1] + 10)),
+                           (SCREEN_WIDTH // 2 - text_size[0] // 2, start_y + i * (text_size[1] + 10)),
                            cv2.FONT_HERSHEY_SIMPLEX, instruction_font_scale, 
                            (200, 200, 200), instruction_thickness)
             
@@ -400,205 +584,191 @@ def draw_pause_message(frame):
         print(f"Error drawing pause message: {e}")
 
 def draw_debug_info(frame):
-    try:
-        if not DEBUG_MODE:
-            return
-            
-        font_scale = max(0.4, min(WIDTH, HEIGHT) / 1200)
-        thickness = max(1, int(font_scale * 1.5))
-        line_height = int(HEIGHT * 0.03)
-        start_y = HEIGHT - 20
-        
-        debug_info = [
-            f"Last Touched: {last_touched}",
-            f"Game State: {'PAUSED' if paused else 'RUNNING'}",
-            f"Right Hand Speed: {abs(ballSpeedX):.1f}",
-            f"Left Hand Speed: {abs(ballSpeedX):.1f}",
-            f"Ball Speed: ({abs(ballSpeedX):.1f}, {abs(ballSpeedY):.1f})",
-            f"Ball Position: ({ballPosition[0]:.1f}, {ballPosition[1]:.1f})",
-            f"Rectangle Mode: {'ON' if RECTANGLE_MODE else 'OFF'}"
-        ]
-        
-        # Calcular el ancho máximo del texto
-        text_width = max([cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0][0] for line in debug_info])
-        
-        # Fondo semitransparente para el texto de debug (esquina inferior izquierda)
-        overlay = frame.copy()
-        cv2.rectangle(overlay, 
-                     (10, start_y - len(debug_info) * line_height - 10),
-                     (20 + text_width, start_y + 10),
-                     (0, 0, 0), -1)
-        alpha = 0.5
-        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-        
-        # Dibujar cada línea de información de debug
-        for i, line in enumerate(debug_info):
-            y_pos = start_y - (len(debug_info) - i - 1) * line_height
-            cv2.putText(frame, line,
-                       (15, y_pos),  # Posición X fija en 15 (izquierda)
-                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), thickness)
-            
-    except Exception as e:
-        print(f"Error drawing debug info: {e}")
-
-def speed_up():
-    global ballSpeedX, ballSpeedY
+    font_scale = SCREEN_WIDTH / 1600
+    thickness = int(1 * SCREEN_WIDTH / 1600)
+    line_height = int(25 * SCREEN_HEIGHT/HEIGHT)
+    margin = int(5 * SCREEN_WIDTH/WIDTH)
     
-    SPEED_INCREASE_FACTOR = 1.3
+    debug_texts = []
+
+    for i, ball in enumerate(balls):
+        pos = ball["pos"]
+        vx = ball["vx"]
+        vy = ball["vy"]
+        debug_texts.append(f"Bola {i+1} Pos: ({pos[0]:.0f}, {pos[1]:.0f})  Vel: ({vx:.1f}, {vy:.1f})")
+
+    debug_texts.append(f"Left Hand Speed: ({hand_trackers[0].smoothed_speed[0]:.1f}, {hand_trackers[0].smoothed_speed[1]:.1f})")
+    debug_texts.append(f"Right Hand Speed: ({hand_trackers[1].smoothed_speed[0]:.1f}, {hand_trackers[1].smoothed_speed[1]:.1f})")
+    debug_texts.append(f"Game State: {'Paused' if game_paused else 'Active' if game_active else 'Inactive'}")
+    debug_texts.append(f"Bolas activas: {len(balls)}")
+
+    max_text_width = 0
+    for text in debug_texts:
+        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
+        if text_size[0] > max_text_width:
+            max_text_width = text_size[0]
     
-    ballSpeedX = abs(ballSpeedX) * SPEED_INCREASE_FACTOR * (1 if ballSpeedX > 0 else -1)
-    ballSpeedY = abs(ballSpeedY) * SPEED_INCREASE_FACTOR * (1 if ballSpeedY > 0 else -1)
+    total_height = len(debug_texts) * line_height
+    start_x = int(10 * SCREEN_WIDTH/WIDTH) - margin
+    start_y = SCREEN_HEIGHT - total_height - int(30 * SCREEN_HEIGHT/HEIGHT) - margin
     
-    if abs(ballSpeedX) > MAX_SPEED:
-        ballSpeedX = MAX_SPEED * (1 if ballSpeedX > 0 else -1)
-    
-    if abs(ballSpeedY) > MAX_SPEED:
-        ballSpeedY = MAX_SPEED * (1 if ballSpeedY > 0 else -1)
+    overlay = frame.copy()
+    cv2.rectangle(
+        overlay, 
+        (start_x, start_y), 
+        (start_x + max_text_width + 2*margin, start_y + total_height + 2*margin), 
+        (0, 0, 0), 
+        -1
+    )
+    cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
 
-def update_ball_position(hand_data):
-    global ballPosition, ballSpeedX, ballSpeedY, left_score, right_score, last_touched
-    
-    if paused:  # No actualizar posición si está en pausa
-        return
+    for i, text in enumerate(debug_texts):
+        pos = (int(10 * SCREEN_WIDTH/WIDTH),
+               SCREEN_HEIGHT - int(30 * SCREEN_HEIGHT/HEIGHT) - (i * line_height))
+        cv2.putText(frame, text, pos, cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale, (0, 255, 255), thickness)
 
-    try:
-        next_x = ballPosition[0] + ballSpeedX
-        next_y = ballPosition[1] + ballSpeedY
+def scale_coords(x, y):
+    scale_x = SCREEN_WIDTH / WIDTH
+    scale_y = SCREEN_HEIGHT / HEIGHT
+    return (int(x * scale_x), int(y * scale_y))
 
-        if next_y <= 0 or next_y >= HEIGHT:
-            ballSpeedY = -ballSpeedY
-
-        paddle_width = max(10, int(WIDTH * 0.015))
-        
-        if (POS_HORIZONTAL_IZQUIERDA - paddle_width//2 <= next_x <= POS_HORIZONTAL_IZQUIERDA + paddle_width//2 and 
-            left_paddle_y <= next_y <= left_paddle_y + RECTANGULO_HEIGHT):
-            if last_touched != 'Left':
-                ballSpeedX = -ballSpeedX
-                last_touched = 'Left'
-                speed_up()
-                if pong_sound:
-                    channel = pygame.mixer.Channel(0)
-                    channel.set_volume(1.0, 0.0)
-                    channel.play(pong_sound)
-
-        elif (POS_HORIZONTAL_DERECHA - paddle_width//2 <= next_x <= POS_HORIZONTAL_DERECHA + paddle_width//2 and 
-              right_paddle_y <= next_y <= right_paddle_y + RECTANGULO_HEIGHT):
-            if last_touched != 'Right':
-                ballSpeedX = -ballSpeedX
-                last_touched = 'Right'
-                speed_up()
-                if pong_sound:
-                    channel = pygame.mixer.Channel(1)
-                    channel.set_volume(0.0, 1.0)
-                    channel.play(pong_sound)
-
-        ballPosition[0] = next_x
-        ballPosition[1] = next_y
-
-        if ballPosition[0] <= 0:
-            right_score += 1
-            reset_ball(direction=-1)
-            if win_sound:
-                channel = pygame.mixer.Channel(2)
-                channel.set_volume(0.0, 1.0)
-                channel.play(win_sound)
-        
-        elif ballPosition[0] >= WIDTH:
-            left_score += 1
-            reset_ball(direction=1)
-            if win_sound:
-                channel = pygame.mixer.Channel(3)
-                channel.set_volume(1.0, 0.0)
-                channel.play(win_sound)
-    except Exception as e:
-        print(f"Error updating ball position: {e}")
-        reset_ball(direction=1 if random.random() > 0.5 else -1)
+try:
+    monitor = get_monitors()[0]
+    SCREEN_WIDTH = monitor.width
+    SCREEN_HEIGHT = monitor.height
+except:
+    SCREEN_WIDTH, SCREEN_HEIGHT = 1920, 1080
 
 def main(args):
     try:
         pygame.mixer.music.load("assets/arcade_acadia.mp3")
-        volume = max(0.0, min(1.0, args.music_volume))  # asegura que esté entre 0.0 y 1.0
+        volume = max(0.0, min(1.0, args.music_volume))
         pygame.mixer.music.set_volume(volume)
         pygame.mixer.music.play(-1)
         print(f"🎵 Música cargada con volumen {volume}")
     except Exception as e:
         print(f"Error al cargar música: {e}")
-    initialize_game()
-    cap = None  # Inicializar la variable fuera del try
-    
-    try:
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            raise Exception("The camera could not be opened")
-            
-        cv2.namedWindow("Pong AR - Turn-Based", cv2.WND_PROP_FULLSCREEN)
-        cv2.setWindowProperty("Pong AR - Turn-Based", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-        
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                print("Error capturing frame")
-                break
+    last_powerup_time = time.time()
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Error: No se pudo abrir la cámara")
+        return
 
-            frame = cv2.flip(frame, 1)
-            frame = cv2.resize(frame, (WIDTH, HEIGHT))
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
-            results = hands.process(rgb_frame)
-            hand_data, left_detected, right_detected = process_hands(results)
-            
-            draw_shadow(frame)
-            draw_ball(frame)
-            draw_middle_line(frame)
-            draw_score(frame)
-            draw_paddles(frame)
-            draw_rectangle_hands(frame, hand_data)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, SCREEN_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, SCREEN_HEIGHT)
+
+    cv2.namedWindow("Pong AR - Turn-Based", cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty("Pong AR - Turn-Based", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            print("Error: No se pudo capturar el frame")
+            break
+
+        current_time = time.time()
+        if current_time - last_powerup_time > POWERUP_INTERVAL:
+            x = WIDTH // 2
+            y = random.randint(50, HEIGHT - 50)
+            new_type = random.choice(POWERUP_TYPES)
+            powerups.append({"x": x, "y": y, "type": new_type})
+            last_powerup_time = current_time
+
+        frame = cv2.flip(frame, 1)
+        frame = cv2.resize(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        draw_shadow(frame)
+
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = hands.process(rgb_frame)
+        hand_data = process_hands(results)
+
+        draw_middle_line(frame)
+        draw_shields(frame)
+        draw_paddles(frame)
+        draw_score(frame)
+
+        for p in powerups:
+            icon = icons.get(p["type"])
+            if icon is not None:
+                x, y = scale_coords(p["x"], p["y"])
+                scale_factor = SCREEN_WIDTH / WIDTH
+                w = int(icon.shape[1] * scale_factor * 1.5)
+                h = int(icon.shape[0] * scale_factor * 1.5)
+                resized_icon = cv2.resize(icon, (w, h), interpolation=cv2.INTER_CUBIC)
+                x1, y1 = int(x - w/2), int(y - h/2)
+                x2, y2 = x1 + w, y1 + h
+
+                if x1 < 0 or y1 < 0 or x2 > frame.shape[1] or y2 > frame.shape[0]:
+                    continue
+
+                roi = frame[y1:y2, x1:x2]
+                alpha_icon = resized_icon[:, :, 3] / 255.0
+                alpha_bg = 1.0 - alpha_icon
+
+                for c in range(3):
+                    roi[:, :, c] = (alpha_icon * resized_icon[:, :, c] +
+                                    alpha_bg * roi[:, :, c])
+
+        speed = update_all_balls(hand_data)
+        draw_ball(frame, speed)
+        draw_warnings(frame)
+        draw_powerup_feed(frame)
+
+        if 'rectangles' in args.extras:
+            draw_game_status(frame, hand_data)
+
+        if 'debug' in args.extras:
             draw_debug_info(frame)
-            
-            if paused:
-                draw_pause_message(frame)
-            else:
-                update_ball_position(hand_data)
-            
-            cv2.imshow("Pong AR - Turn-Based", frame)
-            
-            key = cv2.waitKey(1)
-            if key == ord('q'):
-                print("Volviendo al menú con los ajustes actuales...")
-                command = [
-                    sys.executable, 
-                    "menu.py", 
-                    "--music-volume", 
-                    str(args.music_volume)
-                ]
-                
-                if 'debug' in args.extras:
-                    command.append("--debug")
-                if 'rectangles' in args.extras:
-                    command.append("--rectangles")
-                
-                subprocess.Popen(command)
-                break
-            elif key == 27:  # 27 es el código para la tecla ESC
-                close()
-            elif key & 0xFF == ord('r'):  # Tecla R para resetear
-                reset_game()
 
-    except KeyboardInterrupt:
-        print("\nInterrupción por teclado detectada")
-    except Exception as e:
-        print(f"Error en el juego: {e}")
-    finally:
-        if cap is not None:  # Verificar si la cámara fue inicializada
-            cap.release()
-        cv2.destroyAllWindows()
-        pygame.quit()
+        if not game_active:
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (SCREEN_WIDTH, SCREEN_HEIGHT), (0, 0, 0), -1)
+            cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
+
+            text = "Waiting for 2 players..."
+            text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX,
+                                        SCREEN_WIDTH/800, 2)[0]
+            text_pos = ((SCREEN_WIDTH - text_size[0])//2, SCREEN_HEIGHT//2)
+            cv2.putText(frame, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX,
+                        SCREEN_WIDTH/800, (0, 0, 255), 2)
+        elif game_paused:
+            draw_pause_message(frame)
+
+        cv2.imshow("Pong AR - Turn-Based", frame)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
+            print("Leaving pong_retro.py...")
+            print("Going to menu.py...")
+            subprocess.Popen([sys.executable, "menu.py"])
+            break
+        elif key == 27:
+            print("Closing pong_retro.py...")
+            break
+        elif key == ord('r'):
+            print("Reiniciando partida...")
+            # Reiniciar todas las bolas
+            global balls, left_score, right_score
+            balls = [{
+                "pos": [WIDTH // 2, HEIGHT // 2],
+                "vx": random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
+                "vy": random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
+                "last_touched": None
+            }]
+            left_score = 0
+            right_score = 0
+            shields["left"] = False
+            shields["right"] = False
+            powerups.clear()
+            message_feed.clear()
+
+    cap.release()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Pong Retro - AR Edition")
+    parser = argparse.ArgumentParser(description="Pong 2 - AR Edition")
     parser.add_argument("--music-volume", type=float, default=0.5, help="Volumen de la música (0.0 a 1.0)")
     parser.add_argument("extras", nargs="*", help="Argumentos extra como 'debug' o 'rectangles'")
     args = parser.parse_args()
