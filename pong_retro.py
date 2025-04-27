@@ -11,6 +11,10 @@ import argparse
 from collections import deque
 from screeninfo import get_monitors
 
+# Constantes de rutas
+PONG = "assets/pong.mp3"
+WIN = "assets/win.mp3"
+
 try:
     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
     print("pygame.mixer inicializado correctamente")
@@ -65,8 +69,8 @@ def draw_paddles(frame):
 def load_sound(filename):
     return pygame.mixer.Sound(filename) if os.path.exists(filename) else None
 
-pong_sound = load_sound("pong.mp3")
-win_sound = load_sound("win.mp3")
+pong_sound = load_sound(PONG)
+win_sound = load_sound(WIN)
 
 WIDTH = 640
 HEIGHT = 480
@@ -76,7 +80,6 @@ first_time = True
 RECTANGULO_WIDTH = 10
 RECTANGULO_HEIGHT = 90
 
-# Posiciones iniciales de las paletas
 left_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
 right_paddle_y = HEIGHT // 2 - RECTANGULO_HEIGHT // 2
 
@@ -85,7 +88,6 @@ INITIAL_BALL_EXTRA_BALL = 3
 MAX_BALL_EXTRA_BALL = 15
 HAND_EXTRA_BALL_MULTIPLIER = 5
 
-# Variables globales inicializadas correctamente
 balls = [{
     "pos": [WIDTH // 2, HEIGHT // 2],
     "vx": random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
@@ -177,11 +179,11 @@ class AudioSystem:
     def __init__(self):
         pygame.mixer.init()
         self.sounds = {
-            "left": self._load_sound("pong.mpeg"),
-            "right": self._load_sound("pong.mpeg"),
-            "wall": self._load_sound("pong.mpeg"),
-            "score": self._load_sound("win.mp3"),
-            "start": self._load_sound("win.mp3")
+            "left": self._load_sound(PONG),
+            "right": self._load_sound(PONG),
+            "wall": self._load_sound(PONG),
+            "score": self._load_sound(WIN),
+            "start": self._load_sound(WIN)
         }
         self.channels = {
             "left": pygame.mixer.Channel(0),
@@ -740,16 +742,16 @@ def main(args):
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
-            print("Leaving pong_retro.py...")
-            print("Going to menu.py...")
-            subprocess.Popen([sys.executable, "menu.py"])
+            command = [sys.executable, "menu.py", "--music-volume", str(args.music_volume)]
+            if 'debug' in args.extras:
+                command.append("--debug")
+            if 'rectangles' in args.extras:
+                command.append("--rectangles")
+            subprocess.Popen(command)
             break
         elif key == 27:
-            print("Closing pong_retro.py...")
             break
         elif key == ord('r'):
-            print("Reiniciando partida...")
-            # Reiniciar todas las bolas
             global balls, left_score, right_score
             balls = [{
                 "pos": [WIDTH // 2, HEIGHT // 2],
