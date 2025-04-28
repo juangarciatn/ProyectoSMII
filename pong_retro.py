@@ -769,9 +769,20 @@ def main(args):
     cap.release()
     cv2.destroyAllWindows()
 
+# --- (Código anterior sin cambios hasta la línea del parser) ---
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pong 2 - AR Edition")
     parser.add_argument("--music-volume", type=float, default=0.5, help="Volumen de la música (0.0 a 1.0)")
-    parser.add_argument("extras", nargs="*", help="Argumentos extra como 'debug' o 'rectangles'")
+    parser.add_argument("--debug", action="store_true", help="Activar modo debug")
+    parser.add_argument("--rectangles", action="store_true", help="Mostrar rectángulos de detección")
     args = parser.parse_args()
+
+    # Convertir los argumentos a un formato compatible con el código existente
+    args.extras = []
+    if args.debug:
+        args.extras.append("debug")
+    if args.rectangles:
+        args.extras.append("rectangles")
+
     main(args)
