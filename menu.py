@@ -199,7 +199,7 @@ def draw_main_menu(frame, hovered_button):
         (int(screen_width * 0.15), int(screen_height * 0.1)),
         cv2.FONT_HERSHEY_DUPLEX,
         1.2,
-        (255, 255, 0),
+        (255, 255, 0, 255),
         3
     )
     # Botones del menú
@@ -254,7 +254,7 @@ def draw_settings_menu(frame):
         (x1 + 10, y1 + 30),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.7,
-        (255, 255, 0),
+        (255, 255, 0, 255),
         2
     )
 
@@ -403,10 +403,10 @@ def draw_button(frame, text, position, checked=False, hovered=False):
     cv2.rectangle(frame, (x1, y1), (x2, y2), bg_color, -1)
 
     # Color de borde: verde si está marcado, blanco en estado normal
-    border_color = (0, 255, 0) if checked else (255, 255, 255)
+    border_color = (0, 255, 0, 255) if checked else (255, 255, 255, 255)
     # Si está hovered, usar cyan para resaltar
     if hovered:
-        border_color = (0, 200, 200)
+        border_color = (0, 200, 200, 255)
     cv2.rectangle(frame, (x1, y1), (x2, y2), border_color, 2)
 
     # Ajuste de escala y grosor de texto según tamaño del botón
@@ -416,7 +416,8 @@ def draw_button(frame, text, position, checked=False, hovered=False):
     text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, text_scale, thickness)[0]
     tx = x1 + ((x2 - x1) - text_size[0]) // 2
     ty = y1 + ((y2 - y1) + text_size[1]) // 2
-    cv2.putText(frame, text, (tx, ty), cv2.FONT_HERSHEY_DUPLEX, text_scale, (255, 255, 0), thickness)
+    # Color del texto
+    cv2.putText(frame, text, (tx, ty), cv2.FONT_HERSHEY_DUPLEX, text_scale, (255, 255, 0, 255), thickness)
 
 build_menu_cache()
 
@@ -544,7 +545,14 @@ while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
         draw_settings_menu(menu_overlay)
 
     # Combinar fondo y menú
-    cv2.addWeighted(bg_frame, 1.0, menu_overlay, 1.0, 0, bg_frame)
+    # Separar los canales del menú
+    overlay_bgra = menu_overlay
+    alpha = overlay_bgra[:, :, 3] / 255.0  # Canal alfa normalizado a 0-1
+    overlay_rgb = overlay_bgra[:, :, :3]
+
+    # Combinar usando la máscara alfa
+    bg_frame_rgb = bg_frame[:, :, :3]
+    bg_frame_rgb[:] = (1 - alpha)[:, :, np.newaxis] * bg_frame_rgb + alpha[:, :, np.newaxis] * overlay_rgb
 
     # Determinar modo de control y estado de click
     if hand_results and hand_results.multi_hand_landmarks:
@@ -571,7 +579,7 @@ while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
             ]
             y_offset = 50
             for line in debug_info:
-                cv2.putText(bg_frame, line, (20, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(bg_frame, line, (20, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0, 255), 2)
                 y_offset += 30
 
     # Manejar interacciones de click
