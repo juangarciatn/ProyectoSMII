@@ -767,7 +767,7 @@ def main(args):
         elif key == 27:
             break
         elif key == ord('r'):
-            global balls, left_score, right_score
+            # global balls, left_score, right_score
             balls = [{
                 "pos": [WIDTH // 2, HEIGHT // 2],
                 "vx": random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
@@ -790,7 +790,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="Activar modo debug")
     parser.add_argument("--rectangles", action="store_true", help="Mostrar rectángulos de detección")
     # Añadir el nuevo argumento
-    parser.add_argument("--velocidad", type=int, default=8, choices=range(1,16), 
+    parser.add_argument("--velocidad", type=float, default=8, choices=range(1,16), 
                         help="Velocidad inicial de la bola (1-15)")
     args = parser.parse_args()
 
