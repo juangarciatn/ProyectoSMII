@@ -138,9 +138,9 @@ def load_optimized_gif():
         gif = Image.open("assets/"+GIF_PATH)
         frames = []
         for i, frame in enumerate(ImageSequence.Iterator(gif)):
-            if i % 3 == 0:
+            if i % 4 == 0:
                 frame = frame.convert("RGBA").resize(
-                    (screen_width//2, screen_height//2),  # Reducir tamaño
+                    (screen_width, screen_height),
                     Image.Resampling.NEAREST
                 )
                 np_frame = np.array(frame)
