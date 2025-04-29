@@ -12,6 +12,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--music-volume", type=float, default=0.5)
 parser.add_argument("--debug", action="store_true")
 parser.add_argument("--rectangles", action="store_true")
+parser.add_argument("--velocidad", type=float, default=8.0)
 args = parser.parse_args()
 
 # --- Variables globales ---
@@ -19,6 +20,8 @@ PONG2 = "pong2.py"
 PONGRETRO = "pong_retro.py"
 GIF_PATH = "ponggif.gif"
 WINDOW_NAME = "PongMenu"
+dragging_speed = False
+game_speed = args.velocidad
 CAMERA_RESOLUTION = (1280, 720)
 DISPLAY_RESOLUTION = (640, 480)
 FRAME_SKIP = 1
@@ -168,9 +171,10 @@ button_layout = {
         'pong2': (0.25, 0.1, 0.75, 0.2),
         'retro': (0.25, 0.25, 0.75, 0.35),
         'volume': (0.25, 0.4, 0.75, 0.5),
-        'debug': (0.25, 0.55, 0.75, 0.65),
-        'rectangles': (0.25, 0.7, 0.75, 0.8),
-        'back': (0.25, 0.85, 0.75, 0.95)
+        'speed': (0.25, 0.55, 0.75, 0.65),
+        'debug': (0.25, 0.7, 0.75, 0.8),
+        'rectangles': (0.25, 0.85, 0.75, 0.95),
+        'back': (0.25, 0.95, 0.75, 1.05)
     }
 }
 
@@ -257,6 +261,13 @@ def draw_settings_menu(frame):
         (255, 255, 0, 255),
         2
     )
+    x1, y1 = button_coords['settings']['speed'][0]
+    x2, y2 = button_coords['settings']['speed'][1]
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (30, 30, 30, 200), -1)
+    thumb_pos = x1 + int((game_speed - 1.0)/14.0 * (x2 - x1))
+    cv2.rectangle(frame, (x1, y1), (thumb_pos, y2), (200, 0, 0, 200), -1)
+    cv2.putText(frame, f"Velocidad: {game_speed:.1f}", (x1 + 10, y1 + 30), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0, 255), 2)
 
 # Construye y almacena en caché los overlays para los menús principal y ajustes
 def build_menu_cache():
@@ -282,20 +293,30 @@ def build_menu_cache():
 
 # --- Manejo de interacciones ---
 def handle_clicks():
-    global current_menu, selected_version, debug_enabled, rectangle_enabled, music_volume, click_processed, dragging_volume
-    
+    global current_menu, selected_version, debug_enabled, rectangle_enabled, music_volume, click_processed, game_speed, dragging_volume, dragging_speed
+
+    # Ajuste de velocidad por arrastre
+    if dragging_speed and current_menu == 1:
+        x, y = cursor_pos
+        (x1, y1), (x2, y2) = button_coords['settings']['speed']
+        slider_width = x2 - x1
+        raw_speed = ((x - x1) / slider_width) * 14.0 + 1.0  # Rango 1.0 a 15.0
+        game_speed = max(1.0, min(15.0, round(raw_speed, 1)))
+        build_menu_cache()
+        return
+
+    # Ajuste de volumen por arrastre
     if dragging_volume and current_menu == 1:
         x, y = cursor_pos
         (x1, y1), (x2, y2) = button_coords['settings']['volume']
-        # Cálculo horizontal sin restricción vertical
         slider_width = x2 - x1
         new_volume = (x - x1) / slider_width
         music_volume = max(0.0, min(1.0, new_volume))
         pygame.mixer.music.set_volume(music_volume)
         build_menu_cache()
-        return  # Salir para evitar procesar otros botones
+        return
 
-    # Lógica original para otros botones (sin cambios)
+    # Detección de clics sobre botones
     x, y = cursor_pos
     menu_type = 'main' if current_menu == 0 else 'settings'
     
@@ -303,27 +324,26 @@ def handle_clicks():
         (x1, y1), (x2, y2) = button_coords[menu_type][button_name]
         if x1 <= x <= x2 and y1 <= y <= y2:
             if current_menu == 0:
-                # Lógica del menú principal
                 if button_name == 'play':
                     venv_dir = os.path.join(os.path.dirname(__file__), "pong_venv")
                     python_path = os.path.join(venv_dir, "Scripts", "python.exe") if os.name == 'nt' else os.path.join(venv_dir, "bin", "python")
                     script = PONG2 if selected_version == "Pong 2" else PONGRETRO
-                    args = [python_path, script, "--music-volume", str(music_volume)]
+                    args = [python_path, script, "--music-volume", str(music_volume), "--velocidad", str(game_speed)]
                     if debug_enabled: args.append("--debug")
                     if rectangle_enabled: args.append("--rectangles")
-                    
+
                     cap.release()
                     cv2.destroyAllWindows()
                     subprocess.Popen(args)
                     os._exit(0)
-                    
+
                 elif button_name == 'settings':
                     current_menu = 1
                 elif button_name == 'exit':
                     cap.release()
                     cv2.destroyAllWindows()
                     os._exit(0)
-                    
+
             else:  # Menú de ajustes
                 if button_name == 'pong2':
                     selected_version = "Pong 2"
@@ -338,38 +358,47 @@ def handle_clicks():
 
             build_menu_cache()
             break  # Procesar solo un botón por clic
-    
-    # Marcar como procesado excepto para arrastre de volumen
+
+    # Marcar el clic como procesado (excepto cuando hay arrastre de volumen)
     if not dragging_volume:
         click_processed = True
 
 # --- Callback de ratón ---
 def mouse_callback(event, x, y, flags, param):
-    global cursor_pos, mouse_click, use_mouse, dragging_volume, click_processed, last_mouse_click
-    use_mouse = True
-    cursor_pos = (x, y)
+    global cursor_pos, mouse_click, use_mouse, dragging_volume, dragging_speed, click_processed, last_mouse_click
     
+    if event == cv2.EVENT_MOUSEMOVE:
+        cursor_pos = (x, y)  # Actualizar posición continuamente
+        # Manejar arrastre en tiempo real mientras se mueve el ratón
+        if dragging_volume or dragging_speed:
+            handle_clicks()
+            
     if event == cv2.EVENT_LBUTTONDOWN:
         if not last_mouse_click:
             mouse_click = True
             click_processed = False
-            # Verificar clic inicial en el slider
+            # Verificar clic inicial en sliders
             if current_menu == 1:
-                (x1, y1), (x2, y2) = button_coords['settings']['volume']
-                if x1 <= x <= x2 and y1 <= y <= y2:
+                # Slider de volumen
+                (vol_x1, vol_y1), (vol_x2, vol_y2) = button_coords['settings']['volume']
+                if vol_x1 <= x <= vol_x2 and vol_y1 <= y <= vol_y2:
                     dragging_volume = True
+                    handle_clicks()  # Actualización inmediata al hacer clic
+                
+                # Slider de velocidad
+                (speed_x1, speed_y1), (speed_x2, speed_y2) = button_coords['settings']['speed']
+                if speed_x1 <= x <= speed_x2 and speed_y1 <= y <= speed_y2:
+                    dragging_speed = True
                     handle_clicks()  # Actualización inmediata al hacer clic
             last_mouse_click = True
             
     elif event == cv2.EVENT_LBUTTONUP:
+        # Resetear todos los estados de arrastre
+        dragging_volume = False
+        dragging_speed = False
         mouse_click = False
         last_mouse_click = False
         click_processed = False
-        dragging_volume = False  # Finalizar arrastre
-        
-    elif event == cv2.EVENT_MOUSEMOVE:
-        if dragging_volume:
-            handle_clicks()
             
 cv2.setMouseCallback(WINDOW_NAME, mouse_callback)
 
@@ -425,35 +454,38 @@ build_menu_cache()
 
 # --- Detección de manos ---
 def async_hand_detection():
-    global cursor_pos, click_detected, hand_results, click_active, last_click_time, dragging_volume, click_processed
+    global cursor_pos, click_detected, hand_results, click_active, last_click_time
+    global dragging_volume, dragging_speed, click_processed
+
     prev_pos = None
     SMOOTHING_FACTOR = 0.15
     CLICK_THRESHOLD = 0.07
-    DEBOUNCE_TIME = 0.3  # 300ms entre clics
-    MIN_HOLD_TIME = 0.1  # 100ms de contacto mínimo
+    DEBOUNCE_TIME = 0.3
+    MIN_HOLD_TIME = 0.1
     contact_start_time = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
             continue
-        
+
+        # Flip and convert frame for hand detection
         frame = cv2.flip(frame, 1)
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         hand_results = hands.process(rgb_frame)
-        
+
         if hand_results.multi_hand_landmarks:
             hand = hand_results.multi_hand_landmarks[0]
             idx = mp_hands.HandLandmark.INDEX_FINGER_TIP
             thumb = mp_hands.HandLandmark.THUMB_TIP
-            
-            # Coordenadas normalizadas
+
+            # Get normalized coordinates
             idx_x = hand.landmark[idx].x
             idx_y = hand.landmark[idx].y
             thumb_x = hand.landmark[thumb].x
             thumb_y = hand.landmark[thumb].y
-            
-            # Suavizado de posición
+
+            # Map to screen coordinates with smoothing
             raw_pos = (int(idx_x * screen_width), int(idx_y * screen_height))
             if prev_pos:
                 cursor_pos = (
@@ -463,48 +495,63 @@ def async_hand_detection():
             else:
                 cursor_pos = raw_pos
             prev_pos = cursor_pos
-            
-            # Cálculo de distancia
+
+            # Calculate pinch distance and time
             distance = np.hypot(idx_x - thumb_x, idx_y - thumb_y)
             current_time = time.time()
-            
-            # Lógica de estados mejorada
+
+            # Click detection logic
             if distance < CLICK_THRESHOLD:
                 if not click_active:
                     click_active = True
                     contact_start_time = current_time
-                    click_processed = False  # Nuevo contacto, permitir procesar
+                    click_processed = False
                 else:
-                    # Verificar tiempo de contacto y debounce
                     if (current_time - contact_start_time >= MIN_HOLD_TIME) and \
                        (current_time - last_click_time >= DEBOUNCE_TIME) and \
                        not click_processed:
                         click_detected = True
                         last_click_time = current_time
-                        click_processed = True  # Marcar como procesado
+                        click_processed = True
             else:
                 if click_active:
-                    click_processed = True  # Forzar liberación completa
+                    click_processed = True
                 click_active = False
                 click_detected = False
-            
-            # Detectar arrastre
+
+            # Drag detection for sliders
             if click_active and (current_time - contact_start_time >= MIN_HOLD_TIME):
-                (x1, y1), (x2, y2) = button_coords['settings']['volume']
+                # Volume slider bounds
+                (vol_x1, vol_y1), (vol_x2, vol_y2) = button_coords['settings']['volume']
+                # Speed slider bounds
+                (speed_x1, speed_y1), (speed_x2, speed_y2) = button_coords['settings']['speed']
                 x, y = cursor_pos
-                if current_menu == 1 and x1 <= x <= x2 and y1 <= y <= y2:
-                    dragging_volume = True
+
+                if current_menu == 1:
+                    if vol_x1 <= x <= vol_x2 and vol_y1 <= y <= vol_y2:
+                        dragging_volume = True
+                        dragging_speed = False
+                    elif speed_x1 <= x <= speed_x2 and speed_y1 <= y <= speed_y2:
+                        dragging_speed = True
+                        dragging_volume = False
+                    else:
+                        dragging_volume = False
+                        dragging_speed = False
                 else:
                     dragging_volume = False
+                    dragging_speed = False
             else:
                 dragging_volume = False
-                
+                dragging_speed = False
+
         else:
+            # Reset when no hand detected
             click_active = False
             click_detected = False
             dragging_volume = False
+            dragging_speed = False
             prev_pos = None
-            click_processed = True  # Bloquear hasta nuevo contacto
+            click_processed = True
 
 threading.Thread(target=async_hand_detection, daemon=True).start()
 

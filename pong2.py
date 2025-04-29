@@ -849,7 +849,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pong 2 - AR Edition")
     parser.add_argument("--music-volume", type=float, default=0.5, help="Volumen de la música (0.0 a 1.0)")
-    parser.add_argument("--velocidad", type=int, default=None, help="Velocidad inicial de la pelota (sobrescribe INITIAL_BALL_EXTRA_BALL)")
+    parser.add_argument("--velocidad", type=float, default=None, help="Velocidad inicial de la pelota (sobrescribe INITIAL_BALL_EXTRA_BALL)")
     parser.add_argument("extras", nargs="*", help="Argumentos extra como 'debug' o 'rectangles'")
     args = parser.parse_args()
 
