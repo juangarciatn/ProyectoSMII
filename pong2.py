@@ -57,7 +57,7 @@ first_time = True
 BALL_SIZE = 10
 
 # Configuración de velocidad de la bola
-INITIAL_BALL_EXTRA_BALL = 3
+INITIAL_BALL_EXTRA_BALL = 8
 MAX_BALL_EXTRA_BALL = 15
 HAND_EXTRA_BALL_MULTIPLIER = 5
 
@@ -336,16 +336,29 @@ def process_hands(results):
 
 
 
+# Modificar la función draw_ball para el degradado de color
 def draw_ball(frame, speed):
     for ball in balls:
         center = scale_coords(int(round(ball["pos"][0])), int(round(ball["pos"][1])))
         scaled_size = int(BALL_SIZE * min(SCREEN_WIDTH/WIDTH, SCREEN_HEIGHT/HEIGHT))
 
-        # Color según velocidad (simple)
-        norm_speed = min(np.sqrt(ball["vx"]**2 + ball["vy"]**2) / MAX_BALL_EXTRA_BALL, 1.0)
-        color = (int(255 * (1 - norm_speed)), int(255 * (1 - norm_speed)), int(255 * norm_speed))  # BGR
+        # Calcular velocidad actual
+        current_speed = np.sqrt(ball["vx"]**2 + ball["vy"]**2)
+        # Normalizar la velocidad (0 a 1) basado en el rango entre INITIAL y MAX
+        # Asegurarnos que no dividimos por cero
+        speed_range = max(MAX_BALL_EXTRA_BALL - INITIAL_BALL_EXTRA_BALL, 1)
+        norm_speed = min((current_speed - INITIAL_BALL_EXTRA_BALL) / speed_range, 1.0)
+        norm_speed = max(norm_speed, 0)  # Asegurar que no sea negativo
 
-        cv2.circle(frame, center, scaled_size, color, -1)
+        # Color degradado:
+        # - Azul (255) cuando speed = INITIAL (norm_speed = 0)
+        # - Rojo (255) cuando speed = MAX (norm_speed = 1)
+        # - Verde siempre en 0 para transición directa
+        blue = int(255 * (1 - norm_speed))
+        red = int(255 * norm_speed)
+        green = 0
+
+        cv2.circle(frame, center, scaled_size, (blue, green, red), -1)
 
 
 def draw_shields(frame):
@@ -376,20 +389,19 @@ def draw_middle_line(frame):
             cv2.line(frame, start_point, end_point, (255, 255, 255), line_thickness)
 
 
-# Asegúrate de que ballSpeedX y ballSpeedY no sean cero al comienzo
 def reset_ball(ball=None, vx=None, vy=None):
     if ball is None:
         ball = {
             "pos": [WIDTH // 2, HEIGHT // 2],
-            "vx": vx if vx is not None else random.choice([-1, 1]) * 3,
-            "vy": vy if vy is not None else random.choice([-1, 1]) * 3,
+            "vx": vx if vx is not None else random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
+            "vy": vy if vy is not None else random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
             "last_touched": None
         }
         balls.append(ball)
     else:
         ball["pos"] = [WIDTH // 2, HEIGHT // 2]
-        ball["vx"] = vx if vx is not None else random.choice([-1, 1]) * 3
-        ball["vy"] = vy if vy is not None else random.choice([-1, 1]) * 3
+        ball["vx"] = vx if vx is not None else random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL
+        ball["vy"] = vy if vy is not None else random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL
         ball["last_touched"] = None
 
 
@@ -837,8 +849,13 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pong 2 - AR Edition")
     parser.add_argument("--music-volume", type=float, default=0.5, help="Volumen de la música (0.0 a 1.0)")
+    parser.add_argument("--velocidad", type=int, default=None, help="Velocidad inicial de la pelota (sobrescribe INITIAL_BALL_EXTRA_BALL)")
     parser.add_argument("extras", nargs="*", help="Argumentos extra como 'debug' o 'rectangles'")
     args = parser.parse_args()
+
+    if args.velocidad is not None:
+        INITIAL_BALL_EXTRA_BALL = args.velocidad
+
     main(args)
 
 
