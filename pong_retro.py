@@ -767,7 +767,7 @@ def main(args):
         elif key == 27:
             break
         elif key == ord('r'):
-            global balls, left_score, right_score
+            # global balls, left_score, right_score
             balls = [{
                 "pos": [WIDTH // 2, HEIGHT // 2],
                 "vx": random.choice([-1, 1]) * INITIAL_BALL_EXTRA_BALL,
