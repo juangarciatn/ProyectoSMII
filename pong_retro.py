@@ -34,7 +34,8 @@ def load_icon(path, size=(40, 40)):
 icons = {
     "shield": load_icon("assets/shield.png"),
     "random": load_icon("assets/random.png"),
-    "extra ball": load_icon("assets/speed.png")
+    "extra ball": load_icon("assets/speed.png"),
+    "chaos": load_icon("assets/chaos.png")
 }
 
 def draw_paddles(frame):
@@ -124,7 +125,7 @@ WARNING_TIME = 1.0
 PAUSE_TIME = 3.0
 
 POWERUP_RADIUS = 20
-POWERUP_TYPES = ["shield", "random", "extra ball"]
+POWERUP_TYPES = ["shield", "random", "extra ball", "chaos"]
 POWERUP_INTERVAL = 8
 last_powerup_time = time.time()
 
