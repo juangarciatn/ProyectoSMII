@@ -62,12 +62,8 @@ MAX_BALL_EXTRA_BALL = 15
 HAND_EXTRA_BALL_MULTIPLIER = 5
 
 # Posición inicial de la bola
-balls = [{
-    "pos": [WIDTH // 2, HEIGHT // 2],
-    "vx": INITIAL_BALL_EXTRA_BALL,
-    "vy": INITIAL_BALL_EXTRA_BALL,
-    "last_touched": None
-}]
+balls = []
+
 
 MAX_BALLS = 5
 
@@ -690,6 +686,9 @@ def main(args):
         print(f"🎵 Música cargada con volumen {volume}")
     except Exception as e:
         print(f"Error al cargar música: {e}")
+
+    reset_ball(vx=INITIAL_BALL_EXTRA_BALL, vy=INITIAL_BALL_EXTRA_BALL)
+
 
     last_powerup_time = time.time()
     cap = cv2.VideoCapture(0)
