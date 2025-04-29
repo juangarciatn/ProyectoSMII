@@ -34,7 +34,8 @@ def load_icon(path, size=(40, 40)):
 icons = {
     "shield": load_icon("assets/shield.png"),
     "random": load_icon("assets/random.png"),
-    "extra ball": load_icon("assets/speed.png")
+    "extra ball": load_icon("assets/speed.png"),
+    "chaos": load_icon("assets/chaos.png")
 }
 
 def draw_paddles(frame):
@@ -124,7 +125,7 @@ WARNING_TIME = 1.0
 PAUSE_TIME = 3.0
 
 POWERUP_RADIUS = 20
-POWERUP_TYPES = ["shield", "random", "extra ball"]
+POWERUP_TYPES = ["shield", "random", "extra ball", "chaos"]
 POWERUP_INTERVAL = 8
 last_powerup_time = time.time()
 
@@ -643,6 +644,20 @@ except:
     SCREEN_WIDTH, SCREEN_HEIGHT = 1920, 1080
 
 def main(args):
+    global INITIAL_BALL_SPEED, balls, left_paddle_y, right_paddle_y  # Añadir globales necesarias
+
+    # Establecer la velocidad desde el argumento
+    INITIAL_BALL_SPEED = args.velocidad
+
+    # Reinicializar las bolas con la nueva velocidad
+    balls.clear()
+    balls.append({
+        "pos": [WIDTH // 2, HEIGHT // 2],
+        "vx": random.choice([-1, 1]) * INITIAL_BALL_SPEED,
+        "vy": random.choice([-1, 1]) * INITIAL_BALL_SPEED,
+        "last_touched": None
+    })
+
     try:
         pygame.mixer.music.load("assets/arcade_acadia.mp3")
         volume = max(0.0, min(1.0, args.music_volume))
@@ -769,16 +784,17 @@ def main(args):
     cap.release()
     cv2.destroyAllWindows()
 
-# --- (Código anterior sin cambios hasta la línea del parser) ---
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pong 2 - AR Edition")
     parser.add_argument("--music-volume", type=float, default=0.5, help="Volumen de la música (0.0 a 1.0)")
     parser.add_argument("--debug", action="store_true", help="Activar modo debug")
     parser.add_argument("--rectangles", action="store_true", help="Mostrar rectángulos de detección")
+    # Añadir el nuevo argumento
+    parser.add_argument("--velocidad", type=int, default=8, choices=range(1,16), 
+                        help="Velocidad inicial de la bola (1-15)")
     args = parser.parse_args()
 
-    # Convertir los argumentos a un formato compatible con el código existente
+    # Convertir los argumentos a un formato compatible
     args.extras = []
     if args.debug:
         args.extras.append("debug")
