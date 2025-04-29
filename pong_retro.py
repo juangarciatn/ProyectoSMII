@@ -644,10 +644,11 @@ except:
     SCREEN_WIDTH, SCREEN_HEIGHT = 1920, 1080
 
 def main(args):
-    global INITIAL_BALL_SPEED, balls, left_paddle_y, right_paddle_y  # Añadir globales necesarias
+    global INITIAL_BALL_EXTRA_BALL, INITIAL_BALL_SPEED, balls, left_paddle_y, right_paddle_y  # Añadir globales necesarias
 
     # Establecer la velocidad desde el argumento
     INITIAL_BALL_SPEED = args.velocidad
+    INITIAL_BALL_EXTRA_BALL = args.velocidad
 
     # Reinicializar las bolas con la nueva velocidad
     balls.clear()
@@ -789,7 +790,6 @@ if __name__ == "__main__":
     parser.add_argument("--music-volume", type=float, default=0.5, help="Volumen de la música (0.0 a 1.0)")
     parser.add_argument("--debug", action="store_true", help="Activar modo debug")
     parser.add_argument("--rectangles", action="store_true", help="Mostrar rectángulos de detección")
-    # Añadir el nuevo argumento
     parser.add_argument("--velocidad", type=float, default=8.0, help="Velocidad inicial de la bola (1.0 a 15.0)")
     args = parser.parse_args()
 
