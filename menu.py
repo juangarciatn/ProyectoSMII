@@ -284,22 +284,21 @@ def build_menu_cache():
 def handle_clicks():
     global current_menu, selected_version, debug_enabled, rectangle_enabled, music_volume, click_processed, dragging_volume
     
-    x, y = cursor_pos
-    menu_type = 'main' if current_menu == 0 else 'settings'
-
-    # Manejar slider de volumen (prioridad máxima)
     if dragging_volume and current_menu == 1:
         x, y = cursor_pos
         (x1, y1), (x2, y2) = button_coords['settings']['volume']
-        if x1 <= x <= x2 and y1 <= y <= y2:
-            slider_width = x2 - x1
-            new_volume = (x - x1) / slider_width
-            music_volume = max(0.0, min(1.0, new_volume))
-            pygame.mixer.music.set_volume(music_volume)
-            build_menu_cache()
-            return  # Salir inmediatamente después de actualizar
+        # Cálculo horizontal sin restricción vertical
+        slider_width = x2 - x1
+        new_volume = (x - x1) / slider_width
+        music_volume = max(0.0, min(1.0, new_volume))
+        pygame.mixer.music.set_volume(music_volume)
+        build_menu_cache()
+        return  # Salir para evitar procesar otros botones
 
-    # Procesar otros botones
+    # Lógica original para otros botones (sin cambios)
+    x, y = cursor_pos
+    menu_type = 'main' if current_menu == 0 else 'settings'
+    
     for button_name in button_layout[menu_type]:
         (x1, y1), (x2, y2) = button_coords[menu_type][button_name]
         if x1 <= x <= x2 and y1 <= y <= y2:
@@ -353,22 +352,25 @@ def mouse_callback(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
         if not last_mouse_click:
             mouse_click = True
-            click_processed = False  # Reiniciar estado de procesado
-            # Verificar clic en slider solo si estamos en menú de ajustes
+            click_processed = False
+            # Verificar clic inicial en el slider
             if current_menu == 1:
                 (x1, y1), (x2, y2) = button_coords['settings']['volume']
                 if x1 <= x <= x2 and y1 <= y <= y2:
                     dragging_volume = True
+                    handle_clicks()  # Actualización inmediata al hacer clic
             last_mouse_click = True
+            
     elif event == cv2.EVENT_LBUTTONUP:
         mouse_click = False
         last_mouse_click = False
-        click_processed = False  # Permitir nuevo clic
-        dragging_volume = False
-    elif event == cv2.EVENT_MOUSEMOVE and dragging_volume:
-        # Actualizar volumen durante el arrastre (ignorar debounce)
-        handle_clicks()
-
+        click_processed = False
+        dragging_volume = False  # Finalizar arrastre
+        
+    elif event == cv2.EVENT_MOUSEMOVE:
+        if dragging_volume:
+            handle_clicks()
+            
 cv2.setMouseCallback(WINDOW_NAME, mouse_callback)
 
 # --- Sistema de caché de menús ---
