@@ -22,7 +22,7 @@ GIF_PATH = "ponggif.gif"
 WINDOW_NAME = "PongMenu"
 dragging_speed = False
 game_speed = args.velocidad
-CAMERA_RESOLUTION = (1280, 720)
+CAMERA_RESOLUTION = (640, 480)
 DISPLAY_RESOLUTION = (640, 480)
 FRAME_SKIP = 1
 music_volume = args.music_volume
@@ -138,9 +138,9 @@ def load_optimized_gif():
         gif = Image.open("assets/"+GIF_PATH)
         frames = []
         for i, frame in enumerate(ImageSequence.Iterator(gif)):
-            if i % 2 == 0:
+            if i % 3 == 0:
                 frame = frame.convert("RGBA").resize(
-                    (screen_width, screen_height),
+                    (screen_width//2, screen_height//2),  # Reducir tamaño
                     Image.Resampling.NEAREST
                 )
                 np_frame = np.array(frame)
