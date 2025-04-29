@@ -9,6 +9,7 @@ import random
 import sys
 import subprocess
 import argparse
+from screeninfo import get_monitors
 from collections import deque
 
 try:
@@ -164,10 +165,6 @@ class HandTracker:
 # Inicializar trackers para cada mano
 hand_trackers = [HandTracker(), HandTracker()]
 
-import pygame
-import numpy as np
-
-import pygame
 
 class AudioSystem:
     def __init__(self):
@@ -660,9 +657,6 @@ def scale_coords(x, y):
     scale_y = SCREEN_HEIGHT / HEIGHT
     return (int(x * scale_x), int(y * scale_y))
 
-from screeninfo import get_monitors
-import cv2
-import sys
 
 # Obtener la resolución de la pantalla principal
 try:
@@ -763,11 +757,11 @@ def main(args):
         draw_warnings(frame)
         draw_powerup_feed(frame)
 
-        if 'rectangles' in args.extras:
+        if args.debug:
+            draw_debug_info(frame)
+        if args.rectangles:
             draw_game_status(frame, hand_data)
 
-        if 'debug' in args.extras:
-            draw_debug_info(frame)
 
 
         if not game_active:
@@ -825,10 +819,6 @@ def main(args):
                 str(args.music_volume)
             ]
             
-            if 'debug' in args.extras:
-                command.append("--debug")
-            if 'rectangles' in args.extras:
-                command.append("--rectangles")
             
             subprocess.Popen(command)
             break
@@ -848,9 +838,11 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pong 2 - AR Edition")
     parser.add_argument("--music-volume", type=float, default=0.5, help="Volumen de la música (0.0 a 1.0)")
-    parser.add_argument("--velocidad", type=float, default=None, help="Velocidad inicial de la pelota (sobrescribe INITIAL_BALL_EXTRA_BALL)")
-    parser.add_argument("extras", nargs="*", help="Argumentos extra como 'debug' o 'rectangles'")
+    parser.add_argument("--velocidad", type=float, default=8.0, help="Velocidad inicial de las bolas extra")
+    parser.add_argument("--debug", action="store_true", help="Muestra información de depuración en pantalla")
+    parser.add_argument("--rectangles", action="store_true", help="Dibuja los rectángulos de las manos")
     args = parser.parse_args()
+
 
     if args.velocidad is not None:
         INITIAL_BALL_EXTRA_BALL = args.velocidad
