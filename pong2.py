@@ -62,12 +62,8 @@ MAX_BALL_EXTRA_BALL = 15
 HAND_EXTRA_BALL_MULTIPLIER = 5
 
 # Posición inicial de la bola
-balls = [{
-    "pos": [WIDTH // 2, HEIGHT // 2],
-    "vx": INITIAL_BALL_EXTRA_BALL,
-    "vy": INITIAL_BALL_EXTRA_BALL,
-    "last_touched": None
-}]
+balls = []
+
 
 MAX_BALLS = 5
 
@@ -691,6 +687,9 @@ def main(args):
     except Exception as e:
         print(f"Error al cargar música: {e}")
 
+    reset_ball(vx=INITIAL_BALL_EXTRA_BALL, vy=INITIAL_BALL_EXTRA_BALL)
+
+
     last_powerup_time = time.time()
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -849,7 +848,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pong 2 - AR Edition")
     parser.add_argument("--music-volume", type=float, default=0.5, help="Volumen de la música (0.0 a 1.0)")
-    parser.add_argument("--velocidad", type=int, default=None, help="Velocidad inicial de la pelota (sobrescribe INITIAL_BALL_EXTRA_BALL)")
+    parser.add_argument("--velocidad", type=float, default=None, help="Velocidad inicial de la pelota (sobrescribe INITIAL_BALL_EXTRA_BALL)")
     parser.add_argument("extras", nargs="*", help="Argumentos extra como 'debug' o 'rectangles'")
     args = parser.parse_args()
 
