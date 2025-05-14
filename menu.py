@@ -636,7 +636,7 @@ while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
             click_detected = False
 
     # Actualizar volumen mientras se arrastra el slider
-    if dragging_volume:
+    if dragging_volume or dragging_speed:
         handle_clicks()
 
     # Manejo de teclado
