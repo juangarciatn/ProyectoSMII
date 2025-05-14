@@ -595,13 +595,7 @@ while cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
 
     # Combinar fondo y menú
     # Separar los canales del menú
-    overlay_bgra = menu_overlay
-    alpha = overlay_bgra[:, :, 3] / 255.0  # Canal alfa normalizado a 0-1
-    overlay_rgb = overlay_bgra[:, :, :3]
-
-    # Combinar usando la máscara alfa
-    bg_frame_rgb = bg_frame[:, :, :3]
-    bg_frame_rgb[:] = (1 - alpha)[:, :, np.newaxis] * bg_frame_rgb + alpha[:, :, np.newaxis] * overlay_rgb
+    cv2.addWeighted(bg_frame, 1.0, menu_overlay, 1.0, 0, bg_frame)
 
     # Determinar modo de control y estado de click
     if hand_results and hand_results.multi_hand_landmarks:
